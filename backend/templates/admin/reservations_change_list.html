@@ -1,0 +1,21 @@
+{% extends "admin/change_list.html" %}
+{% load i18n admin_urls %}
+
+{% block object-tools-items %}
+    {{ block.super }}
+    <li>
+        <a href="{% url 'admin:import_reservations' %}" class="addlink">
+            Import Reservations
+        </a>
+    </li>
+    <li>
+        <a href="{% url 'admin:export_reservations_csv' %}" class="exportlink">
+            Export All as CSV
+        </a>
+    </li>
+    <li>
+        <a href="{% url 'admin:export_reservations_excel' %}" class="exportlink">
+            Export All as Excel
+        </a>
+    </li>
+{% endblock %}

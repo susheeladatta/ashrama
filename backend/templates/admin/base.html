@@ -1,0 +1,149 @@
+{% extends "admin/base.html" %}
+{% load i18n %}  <!-- Add this line at the top -->
+
+{% block extrahead %}
+    {{ block.super }}
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .notification-badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background-color: #ff4d4d;
+            color: white;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .notification-dropdown {
+            position: fixed;
+            right: 20px;
+            top: 60px;
+            background: var(--body-bg);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            min-width: 300px;
+            max-width: 400px;
+            max-height: 500px;
+            overflow-y: auto;
+            z-index: 1100;
+            display: none;
+        }
+        .notification-dropdown.show {
+            display: block;
+        }
+        .notification-item {
+            padding: 10px;
+            border-bottom: 1px solid var(--hairline-color);
+            color: var(--body-fg);
+        }
+        .notification-item:last-child {
+            border-bottom: none;
+        }
+        .notification-header {
+            padding: 10px;
+            background: var(--header-bg);
+            color: var(--header-color);
+            border-bottom: 1px solid var(--hairline-color);
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+        }
+        .notification-container {
+            position: relative;
+            display: inline-block;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        .repair-message {
+            margin-top: 5px;
+            font-size: 0.9em;
+            color: var(--body-quiet-color);
+        }
+        #notification-bell {
+            position: relative;
+            padding: 0 8px;
+            color: var(--header-color);
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+        }
+        #notification-bell:hover {
+            color: var(--header-link-color);
+        }
+        #user-tools {
+            display: inline-flex;
+            align-items: center;
+        }
+    </style>
+{% endblock %}
+
+{% block usertools %}
+    <div id="user-tools">
+        {% block welcome-msg %}
+            {% translate 'Welcome,' %}
+            <strong>{% firstof user.get_short_name user.get_username %}</strong>.
+        {% endblock %}
+        {% block userlinks %}
+            {% if site_url %}
+                <a href="{{ site_url }}">{% translate 'View site' %}</a> /
+            {% endif %}
+            {% if user.has_usable_password %}
+                <a href="{% url 'admin:password_change' %}">{% translate 'Change password' %}</a> /
+            {% endif %}
+            <a href="{% url 'admin:logout' %}">{% translate 'Log out' %}</a>
+        {% endblock %}
+        <div class="notification-container">
+            <a href="#" id="notification-bell">
+                <i class="fas fa-bell"></i>
+                {% if rooms_needing_repair %}
+                    <span class="notification-badge">{{ rooms_needing_repair|length }}</span>
+                {% endif %}
+            </a>
+            <div class="notification-dropdown" id="notification-dropdown">
+                <div class="notification-header">Rooms Needing Repair</div>
+                {% for room in rooms_needing_repair %}
+                    <div class="notification-item">
+                        <strong>Needs repair: Room #{{ room.number }}</strong>
+                        {% if room.floor %}, Floor #{{ room.floor.number }}{% endif %}
+                        {% if room.building %}, Building: {{ room.building.name }}{% endif %}
+                        {% if room.repair_notes %}
+                            <div class="repair-message">{{ room.repair_notes }}</div>
+                        {% endif %}
+                        <div style="margin-top: 5px;">
+                            <a href="{% url 'admin:rooms_room_change' room.id %}" class="button">View/Edit</a>
+                        </div>
+                    </div>
+                {% empty %}
+                    <div class="notification-item">No rooms need repair at this time</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const bell = document.getElementById('notification-bell');
+            const dropdown = document.getElementById('notification-dropdown');
+            
+            if (bell && dropdown) {
+                bell.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    dropdown.classList.toggle('show');
+                    e.stopPropagation();
+                });
+                
+                document.addEventListener('click', function() {
+                    dropdown.classList.remove('show');
+                });
+                
+                dropdown.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                });
+            }
+        });
+    </script>
+{% endblock %}

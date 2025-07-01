@@ -1,0 +1,7 @@
+{% extends "admin/change_form.html" %}
+{% block extrahead %}
+    {{ block.super }}
+    <script>
+        window.allowedRoomTypesForFloors = {{ allowed_room_types_json|safe }};
+    </script>
+{% endblock %}
