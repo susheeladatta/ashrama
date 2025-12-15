@@ -1,10 +1,21 @@
+{# templates/admin/base_site.html - drop this into your project's templates/admin/ folder #}
 {% extends "admin/base.html" %}
-{% load i18n %}  <!-- Add this line at the top -->
+{% load i18n static %}
+
+{# Ensure we keep the admin's head and any required assets. We include both blocks 'extrahead' and 'extrastyle'
+   calling block.super so we don't accidentally remove Django Admin's CSS/JS. #}
 
 {% block extrahead %}
     {{ block.super }}
+{% endblock %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <!-- Font Awesome for the bell icon (optional) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
     <style>
+        /* Fallback values added (after block.super) so styling still works if admin CSS hasn't applied variables */
         .notification-badge {
             position: absolute;
             top: -5px;
@@ -23,8 +34,8 @@
             position: fixed;
             right: 20px;
             top: 60px;
-            background: var(--body-bg);
-            border: 1px solid var(--border-color);
+            background: var(--body-bg, #ffffff);
+            border: 1px solid var(--border-color, #ddd);
             box-shadow: 0 2px 10px rgba(0,0,0,0.2);
             min-width: 300px;
             max-width: 400px;
@@ -38,17 +49,17 @@
         }
         .notification-item {
             padding: 10px;
-            border-bottom: 1px solid var(--hairline-color);
-            color: var(--body-fg);
+            border-bottom: 1px solid var(--hairline-color, #eee);
+            color: var(--body-fg, #111);
         }
         .notification-item:last-child {
             border-bottom: none;
         }
         .notification-header {
             padding: 10px;
-            background: var(--header-bg);
-            color: var(--header-color);
-            border-bottom: 1px solid var(--hairline-color);
+            background: var(--header-bg, #f5f5f5);
+            color: var(--header-color, #111);
+            border-bottom: 1px solid var(--hairline-color, #eee);
             font-weight: bold;
             position: sticky;
             top: 0;
@@ -62,49 +73,64 @@
         .repair-message {
             margin-top: 5px;
             font-size: 0.9em;
-            color: var(--body-quiet-color);
+            color: var(--body-quiet-color, #666);
         }
         #notification-bell {
             position: relative;
             padding: 0 8px;
-            color: var(--header-color);
+            color: var(--header-color, #111);
             text-decoration: none;
             display: inline-block;
             font-size: 16px;
         }
         #notification-bell:hover {
-            color: var(--header-link-color);
+            color: var(--header-link-color, #111);
         }
         #user-tools {
             display: inline-flex;
             align-items: center;
+            gap: 8px;
+        }
+        /* A small helper so the 'View/Edit' link looks like an admin button */
+        .notification-item .button {
+            display: inline-block;
+            padding: 3px 8px;
+            border: 1px solid var(--border-color, #ddd);
+            background: var(--header-bg, #f5f5f5);
+            text-decoration: none;
+            border-radius: 3px;
+            font-size: 0.9em;
         }
     </style>
 {% endblock %}
 
+{# Replace the usertools block but keep admin functionality intact. #}
 {% block usertools %}
     <div id="user-tools">
         {% block welcome-msg %}
-            {% translate 'Welcome,' %}
+            {% trans "Welcome," %}
             <strong>{% firstof user.get_short_name user.get_username %}</strong>.
         {% endblock %}
+
         {% block userlinks %}
             {% if site_url %}
-                <a href="{{ site_url }}">{% translate 'View site' %}</a> /
+                <a href="{{ site_url }}">{% trans "View site" %}</a> /
             {% endif %}
             {% if user.has_usable_password %}
-                <a href="{% url 'admin:password_change' %}">{% translate 'Change password' %}</a> /
+                <a href="{% url 'admin:password_change' %}">{% trans "Change password" %}</a> /
             {% endif %}
-            <a href="{% url 'admin:logout' %}">{% translate 'Log out' %}</a>
+            <a href="{% url 'admin:logout' %}">{% trans "Log out" %}</a>
         {% endblock %}
+
         <div class="notification-container">
-            <a href="#" id="notification-bell">
-                <i class="fas fa-bell"></i>
+            <a href="#" id="notification-bell" aria-haspopup="true" aria-expanded="false" aria-controls="notification-dropdown">
+                <i class="fas fa-bell" aria-hidden="true"></i>
                 {% if rooms_needing_repair %}
                     <span class="notification-badge">{{ rooms_needing_repair|length }}</span>
                 {% endif %}
             </a>
-            <div class="notification-dropdown" id="notification-dropdown">
+
+            <div class="notification-dropdown" id="notification-dropdown" role="dialog" aria-label="Rooms needing repair">
                 <div class="notification-header">Rooms Needing Repair</div>
                 {% for room in rooms_needing_repair %}
                     <div class="notification-item">
@@ -124,26 +150,60 @@
             </div>
         </div>
     </div>
+
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const bell = document.getElementById('notification-bell');
-            const dropdown = document.getElementById('notification-dropdown');
-            
-            if (bell && dropdown) {
+        (function() {
+            function ready(fn) {
+                if (document.readyState !== 'loading') {
+                    fn();
+                } else {
+                    document.addEventListener('DOMContentLoaded', fn);
+                }
+            }
+
+            ready(function() {
+                const bell = document.getElementById('notification-bell');
+                const dropdown = document.getElementById('notification-dropdown');
+
+                if (!bell || !dropdown) return;
+
+                function openDropdown() {
+                    dropdown.classList.add('show');
+                    bell.setAttribute('aria-expanded', 'true');
+                }
+                function closeDropdown() {
+                    dropdown.classList.remove('show');
+                    bell.setAttribute('aria-expanded', 'false');
+                }
+
                 bell.addEventListener('click', function(e) {
                     e.preventDefault();
-                    dropdown.classList.toggle('show');
+                    // toggle
+                    if (dropdown.classList.contains('show')) {
+                        closeDropdown();
+                    } else {
+                        openDropdown();
+                    }
                     e.stopPropagation();
                 });
-                
-                document.addEventListener('click', function() {
-                    dropdown.classList.remove('show');
+
+                // close when clicking outside
+                document.addEventListener('click', function(ev) {
+                    if (!dropdown.contains(ev.target) && !bell.contains(ev.target)) {
+                        closeDropdown();
+                    }
                 });
-                
+
+                // prevent clicks inside dropdown from closing it
                 dropdown.addEventListener('click', function(e) {
                     e.stopPropagation();
                 });
-            }
-        });
+
+                // close on escape
+                document.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape') closeDropdown();
+                });
+            });
+        })();
     </script>
 {% endblock %}

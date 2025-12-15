@@ -1,0 +1,5 @@
+{# Render the Floor inline with header + nested inlines only (no floor fields). #}
+{% extends "nested_admin/edit_inline/stacked.html" %}
+
+{# This block is where field rows would normally render. We suppress it. #}
+{% block inline_field_sets %}{% endblock %}

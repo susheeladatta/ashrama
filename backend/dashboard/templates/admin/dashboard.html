@@ -1,0 +1,54 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<h1>Dashboard</h1>
+
+<p>Summary of rooms by building (click the numbers to open the filtered Rooms list).</p>
+
+<table class="listing" style="width:100%;">
+  <thead>
+    <tr>
+      <th>Building</th>
+      <th style="text-align:right;">Total</th>
+
+      <th style="text-align:right;">Available (Private)</th>
+      <th style="text-align:right;">Occupied (Private)</th>
+
+      <th style="text-align:right;">Available (Female dorm)</th>
+      <th style="text-align:right;">Occupied (Female dorm)</th>
+
+      <th style="text-align:right;">Available (Male dorm)</th>
+      <th style="text-align:right;">Occupied (Male dorm)</th>
+
+      <th style="text-align:right;">Need repair</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    {% for row in items %}
+      <tr class="{% cycle 'row1' 'row2' %}">
+        <th scope="row">
+          <a href="{{ row.building_url }}">{{ row.building.name }}</a>
+        </th>
+
+        <td style="text-align:right;">
+          <a href="{{ row.total_url }}">{{ row.total }}</a>
+        </td>
+
+        <td style="text-align:right;"><a href="{{ row.priv_avail_url }}">{{ row.priv_avail }}</a></td>
+        <td style="text-align:right;"><a href="{{ row.priv_occ_url }}">{{ row.priv_occ }}</a></td>
+
+        <td style="text-align:right;"><a href="{{ row.female_avail_url }}">{{ row.female_avail }}</a></td>
+        <td style="text-align:right;"><a href="{{ row.female_occ_url }}">{{ row.female_occ }}</a></td>
+
+        <td style="text-align:right;"><a href="{{ row.male_avail_url }}">{{ row.male_avail }}</a></td>
+        <td style="text-align:right;"><a href="{{ row.male_occ_url }}">{{ row.male_occ }}</a></td>
+
+        <td style="text-align:right;"><a href="{{ row.repair_url }}">{{ row.repair }}</a></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="9">No buildings found.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

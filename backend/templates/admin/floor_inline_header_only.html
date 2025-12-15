@@ -1,0 +1,8 @@
+{# templates/admin/rooms/floor_inline_header_only.html #}
+{% comment %}
+Render the Floor inline with header + nested inlines only.
+We extend nested_admin's stacked inline and suppress the floor field rows.
+{% endcomment %}
+{% extends "nested_admin/edit_inline/stacked.html" %}
+
+{% block inline_field_sets %}{% endblock %}

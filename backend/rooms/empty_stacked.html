@@ -1,0 +1,11 @@
+{% comment %}
+This hides the floor's field area entirely while keeping nested inlines (Rooms) working.
+We extend the nested_admin stacked inline template and override the block that renders
+the inline field sets (labels/inputs). Everything else (header, nested inlines, controls)
+is preserved by the parent template.
+{% endcomment %}
+{% extends "nested_admin/edit_inline/stacked.html" %}
+
+{% block inline_field_sets %}
+{# Intentionally empty: don't render any floor field rows #}
+{% endblock %}
