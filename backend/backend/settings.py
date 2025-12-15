@@ -30,7 +30,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "insecure-dev-secret")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['165.227.166.178', 'localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'ashrama.onrender.com']
 
 
 # Application definition
