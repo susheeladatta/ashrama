@@ -4,22 +4,56 @@ from django.urls import reverse
 from django.db.models.functions import Cast
 from django.db.models import IntegerField
 
-from .models import Room, Reservation, Building
+from .models import Room, Reservation, Building, Floor
 from .utils import format_room_option
 
 
+# ---------------------------------------------------------
+# ROOM ADMIN FORM — floor becomes numeric instead of dropdown
+# ---------------------------------------------------------
 class RoomAdminForm(forms.ModelForm):
+    # Override floor: numeric <input> instead of ForeignKey dropdown
+    floor = forms.IntegerField(
+        required=False,
+        label="Floor number",
+        widget=forms.NumberInput(attrs={"min": 1}),
+        help_text="Enter the floor number (the system will create it automatically).",
+    )
+
     class Meta:
         model = Room
         fields = "__all__"
 
+    def clean_floor(self):
+        """
+        Convert the numeric floor input into a Floor instance.
+        Automatically creates a Floor object under the selected building.
+        """
+        floor_number = self.cleaned_data.get("floor")
+        building = self.cleaned_data.get("building")
 
+        # If no floor number or no building selected yet
+        if not floor_number or not building:
+            return None
+
+        # Try to get or create the floor for this building
+        floor_obj, created = Floor.objects.get_or_create(
+            building=building,
+            number=floor_number
+        )
+        return floor_obj
+
+
+# ---------------------------------------------------------
+# RESERVATION ADMIN FORM (your original logic preserved 100%)
+# ---------------------------------------------------------
 class ReservationAdminForm(forms.ModelForm):
     """
     Admin form: building selector provides `data-rooms-url`.
     Room queryset is EMPTY by default; JS populates it when building is chosen.
-    When editing an instance, pre-populate building and rooms for that reservation.
+    When editing an instance, pre-populate building and rooms.
     """
+
     building = forms.ModelChoiceField(
         queryset=Building.objects.all().order_by("name"),
         required=False,
@@ -34,7 +68,7 @@ class ReservationAdminForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # Resolve the URL for the AJAX endpoint and attach it to the building widget
+        # Attach rooms AJAX URL to building field
         try:
             rooms_url = reverse("rooms_for_building")
         except Exception:
@@ -42,22 +76,23 @@ class ReservationAdminForm(forms.ModelForm):
         if "building" in self.fields:
             self.fields["building"].widget.attrs["data-rooms-url"] = rooms_url
 
-        # Default: no rooms shown until building selected (prevents duplicates/all-rooms)
+        # By default: NO rooms shown until building is selected
         self.fields["room"].queryset = Room.objects.none()
 
-        # If editing an existing reservation, populate building and rooms
+        # If editing an existing reservation:
         if self.instance and getattr(self.instance, "pk", None):
             room = getattr(self.instance, "room", None)
             if room:
-                b = room.building
-                self.fields["building"].initial = b
-                # Rooms only from that building, ordered by floor number and numeric room number
+                building = room.building
+                self.fields["building"].initial = building
+
+                # Filter rooms for only that building
                 self.fields["room"].queryset = (
-                    Room.objects.filter(building=b)
+                    Room.objects.filter(building=building)
                     .select_related("floor")
                     .annotate(_num_int=Cast("number", IntegerField()))
                     .order_by("floor__number", "_num_int", "number")
                 )
 
-        # Always use the pretty label for the room field (server-rendered fallback)
+        # Always display rooms using pretty label
         self.fields["room"].label_from_instance = format_room_option

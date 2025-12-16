@@ -3,7 +3,7 @@ from django import forms
 from django.contrib import admin
 from django.contrib.admin import SimpleListFilter
 from django.db.models import Max, Count
-from dal import autocomplete
+#from dal import autocomplete
 
 from .models import Building, Floor, Room, Guest, Reservation
 from .forms import RoomAdminForm, ReservationAdminForm
@@ -15,14 +15,14 @@ from django.db.models import (
 from django.utils import timezone
 
 
-# ---------- Autocomplete for Floor (DAL) ----------
-class FloorAutocomplete(autocomplete.Select2QuerySetView):
-    def get_queryset(self):
-        qs = Floor.objects.all()
-        building_id = self.forwarded.get("building")
-        if building_id:
-            qs = qs.filter(building_id=building_id)
-        return qs
+# # ---------- Autocomplete for Floor (DAL) ----------
+# class FloorAutocomplete(autocomplete.Select2QuerySetView):
+#     def get_queryset(self):
+#         qs = Floor.objects.all()
+#         building_id = self.forwarded.get("building")
+#         if building_id:
+#             qs = qs.filter(building_id=building_id)
+#         return qs
 
 
 # ---------- Inline forms ----------
