@@ -280,11 +280,42 @@ class ReservationAdmin(admin.ModelAdmin):
     form = ReservationAdminForm
     filter_horizontal = ("guests",)
 
+    def get_form(self, request, obj=None, **kwargs):
+        """
+        FIX: Ensure room queryset is not empty during POST.
+        Always allow the currently-selected room even if building filtering
+        would normally exclude it.
+        """
+        form = super().get_form(request, obj, **kwargs)
+
+        original_get_queryset = form.base_fields["room"].queryset
+
+        def _safe_queryset(form_instance):
+            qs = original_get_queryset
+            building = (
+                form_instance.cleaned_data.get("building")
+                or (obj.building if obj else None)
+            )
+
+            # Filter normally by building
+            if building:
+                qs = qs.filter(building=building)
+
+            # Ensure the selected room remains valid
+            selected_room = (
+                form_instance.cleaned_data.get("room")
+                or (obj.room if obj else None)
+            )
+            if selected_room:
+                qs = qs | original_get_queryset.filter(pk=selected_room.pk)
+
+            return qs.distinct()
+
+        form.base_fields["room"].get_limit_choices_to = lambda: {}
+        form.base_fields["room"].safe_queryset_builder = _safe_queryset
+        return form
+
     def get_fields(self, request, obj=None):
-        """
-        Insert the helper 'building' directly before 'room'
-        so the order is: ... Building, Room, ...
-        """
         fields = list(super().get_fields(request, obj))
         if "room" in fields:
             if "building" in fields:
@@ -295,3 +326,13 @@ class ReservationAdmin(admin.ModelAdmin):
             if "building" not in fields:
                 fields.append("building")
         return fields
+
+def clean(self):
+    cleaned = super().clean()
+    room_field = self.fields["room"]
+
+    if hasattr(room_field, "safe_queryset_builder"):
+        room_field.queryset = room_field.safe_queryset_builder(self)
+
+    return cleaned
+
