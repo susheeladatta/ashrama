@@ -62,41 +62,44 @@ class ReservationAdminForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # Attach rooms AJAX URL (unchanged)
+        # Attach AJAX URL (unchanged)
         try:
-            rooms_url = reverse("rooms_for_building")
+            self.fields["building"].widget.attrs["data-rooms-url"] = reverse("rooms_for_building")
         except Exception:
-            rooms_url = ""
-        self.fields["building"].widget.attrs["data-rooms-url"] = rooms_url
+            pass
 
-        # --------------------------------------------------
-        # 🔒 IMPORTANT RULE:
-        # Editing → DO NOT restrict queryset
-        # Adding → restrict by building
-        # --------------------------------------------------
+        room_qs = Room.objects.none()
 
-        if self.instance.pk:
-            # ✅ Editing existing reservation
-            # Let Django Admin handle selected room naturally
-            self.fields["room"].queryset = Room.objects.all()
+        # -------------------------------------------------
+        # CASE 1: Editing existing reservation
+        # -------------------------------------------------
+        if self.instance.pk and self.instance.room_id:
+            instance_room = self.instance.room
 
-            if self.instance.room:
-                self.initial["building"] = self.instance.room.building_id
+            room_qs = Room.objects.filter(
+                Q(pk=instance_room.pk) |
+                Q(building_id=instance_room.building_id)
+            )
 
-        else:
-            # ✅ Adding new reservation
-            building_id = self.data.get("building")
+            self.initial["building"] = instance_room.building_id
 
-            if building_id:
-                self.fields["room"].queryset = (
-                    Room.objects.filter(building_id=building_id)
-                    .select_related("floor")
-                    .annotate(_num_int=Cast("number", IntegerField()))
-                    .order_by("floor__number", "_num_int", "number")
-                )
-                self.initial["building"] = building_id
-            else:
-                self.fields["room"].queryset = Room.objects.none()
+        # -------------------------------------------------
+        # CASE 2: Adding OR POST-back with building selected
+        # -------------------------------------------------
+        building_id = self.data.get("building") or self.initial.get("building")
+
+        if building_id:
+            room_qs = Room.objects.filter(
+                Q(building_id=building_id) |
+                Q(pk=getattr(self.instance, "room_id", None))
+            )
+
+        self.fields["room"].queryset = (
+            room_qs
+            .select_related("floor")
+            .annotate(_num_int=Cast("number", IntegerField()))
+            .order_by("floor__number", "_num_int", "number")
+            .distinct()
+        )
 
         self.fields["room"].label_from_instance = format_room_option
-
