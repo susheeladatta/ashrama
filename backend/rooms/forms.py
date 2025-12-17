@@ -62,34 +62,43 @@ class ReservationAdminForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # Attach rooms AJAX URL to building field (unchanged)
+        # Attach rooms AJAX URL (unchanged)
         try:
             rooms_url = reverse("rooms_for_building")
         except Exception:
             rooms_url = ""
         self.fields["building"].widget.attrs["data-rooms-url"] = rooms_url
 
-        building = None
+        building_id = None
 
+        # POST (saving)
         if self.data.get("building"):
-            building = self.data.get("building")
-        elif self.instance.pk and self.instance.room:
-            building = self.instance.room.building_id
+            building_id = self.data.get("building")
 
-        if building:
+        # EDITING existing reservation
+        elif self.instance.pk and self.instance.room:
+            building_id = self.instance.room.building_id
+
+        if building_id:
             qs = (
-                Room.objects.filter(building_id=building)
+                Room.objects.filter(building_id=building_id)
                 .select_related("floor")
                 .annotate(_num_int=Cast("number", IntegerField()))
                 .order_by("floor__number", "_num_int", "number")
             )
 
-            self.fields["room"].queryset = qs
-            self.fields["building"].initial = building
+            # 🔒 CRITICAL: always include the saved room
+            if self.instance.pk and self.instance.room:
+                qs = qs | Room.objects.filter(pk=self.instance.room.pk)
 
-                # ✅ FIX: ensure room is pre-selected when editing
+            self.fields["room"].queryset = qs.distinct()
+            self.initial["building"] = building_id
+
+            # ✅ THIS is what makes the room show up
             if self.instance.pk and self.instance.room:
                 self.initial["room"] = self.instance.room.pk
 
         else:
             self.fields["room"].queryset = Room.objects.none()
+
+        self.fields["room"].label_from_instance = format_room_option
