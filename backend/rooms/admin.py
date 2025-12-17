@@ -326,13 +326,3 @@ class ReservationAdmin(admin.ModelAdmin):
             if "building" not in fields:
                 fields.append("building")
         return fields
-
-    def clean(self):
-        cleaned = super().clean()
-        room_field = self.fields["room"]
-
-        if hasattr(room_field, "safe_queryset_builder"):
-            room_field.queryset = room_field.safe_queryset_builder(self)
-
-        return cleaned
-

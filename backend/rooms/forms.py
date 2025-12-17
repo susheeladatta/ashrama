@@ -96,3 +96,14 @@ class ReservationAdminForm(forms.ModelForm):
 
         # Always display rooms using pretty label
         self.fields["room"].label_from_instance = format_room_option
+    
+    def clean(self):
+        cleaned = super().clean()
+
+        room_field = self.fields["room"]
+
+        # Apply the safe queryset fix from admin
+        if hasattr(room_field, "safe_queryset_builder"):
+            room_field.queryset = room_field.safe_queryset_builder(self)
+
+        return cleaned
