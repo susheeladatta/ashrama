@@ -2,7 +2,7 @@
 from django import forms
 from django.urls import reverse
 from django.db.models.functions import Cast
-from django.db.models import IntegerField
+from django.db.models import IntegerField, Q
 
 from .models import Room, Reservation, Building, Floor
 from .utils import format_room_option
