@@ -69,8 +69,6 @@ class ReservationAdminForm(forms.ModelForm):
             rooms_url = ""
         self.fields["building"].widget.attrs["data-rooms-url"] = rooms_url
 
-        # 🔥 IMPORTANT FIX 🔥
-        # Determine building from POST, instance, or initial
         building = None
 
         if self.data.get("building"):
@@ -79,14 +77,19 @@ class ReservationAdminForm(forms.ModelForm):
             building = self.instance.room.building_id
 
         if building:
-            self.fields["room"].queryset = (
+            qs = (
                 Room.objects.filter(building_id=building)
                 .select_related("floor")
                 .annotate(_num_int=Cast("number", IntegerField()))
                 .order_by("floor__number", "_num_int", "number")
             )
+
+            self.fields["room"].queryset = qs
             self.fields["building"].initial = building
+
+            # ✅ FIX: ensure room is pre-selected when editing
+            if self.instance.pk and self.instance.room:
+                self.fields["room"].initial = self.instance.room
+
         else:
             self.fields["room"].queryset = Room.objects.none()
-
-        self.fields["room"].label_from_instance = format_room_option
