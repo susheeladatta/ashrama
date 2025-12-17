@@ -69,36 +69,34 @@ class ReservationAdminForm(forms.ModelForm):
             rooms_url = ""
         self.fields["building"].widget.attrs["data-rooms-url"] = rooms_url
 
-        building_id = None
+        # --------------------------------------------------
+        # 🔒 IMPORTANT RULE:
+        # Editing → DO NOT restrict queryset
+        # Adding → restrict by building
+        # --------------------------------------------------
 
-        # POST (saving)
-        if self.data.get("building"):
-            building_id = self.data.get("building")
+        if self.instance.pk:
+            # ✅ Editing existing reservation
+            # Let Django Admin handle selected room naturally
+            self.fields["room"].queryset = Room.objects.all()
 
-        # EDITING existing reservation
-        elif self.instance.pk and self.instance.room:
-            building_id = self.instance.room.building_id
-
-        if building_id:
-            qs = (
-                Room.objects.filter(building_id=building_id)
-                .select_related("floor")
-                .annotate(_num_int=Cast("number", IntegerField()))
-                .order_by("floor__number", "_num_int", "number")
-            )
-
-            # 🔒 CRITICAL: always include the saved room
-            if self.instance.pk and self.instance.room:
-                qs = qs | Room.objects.filter(pk=self.instance.room.pk)
-
-            self.fields["room"].queryset = qs.distinct()
-            self.initial["building"] = building_id
-
-            # ✅ THIS is what makes the room show up
-            if self.instance.pk and self.instance.room:
-                self.initial["room"] = self.instance.room.pk
+            if self.instance.room:
+                self.initial["building"] = self.instance.room.building_id
 
         else:
-            self.fields["room"].queryset = Room.objects.none()
+            # ✅ Adding new reservation
+            building_id = self.data.get("building")
+
+            if building_id:
+                self.fields["room"].queryset = (
+                    Room.objects.filter(building_id=building_id)
+                    .select_related("floor")
+                    .annotate(_num_int=Cast("number", IntegerField()))
+                    .order_by("floor__number", "_num_int", "number")
+                )
+                self.initial["building"] = building_id
+            else:
+                self.fields["room"].queryset = Room.objects.none()
 
         self.fields["room"].label_from_instance = format_room_option
+
