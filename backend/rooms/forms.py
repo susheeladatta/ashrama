@@ -48,12 +48,6 @@ class RoomAdminForm(forms.ModelForm):
 # RESERVATION ADMIN FORM (your original logic preserved 100%)
 # ---------------------------------------------------------
 class ReservationAdminForm(forms.ModelForm):
-    """
-    Admin form: building selector provides `data-rooms-url`.
-    Room queryset is EMPTY by default; JS populates it when building is chosen.
-    When editing an instance, pre-populate building and rooms.
-    """
-
     building = forms.ModelChoiceField(
         queryset=Building.objects.all().order_by("name"),
         required=False,
@@ -68,42 +62,31 @@ class ReservationAdminForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # Attach rooms AJAX URL to building field
+        # Attach rooms AJAX URL to building field (unchanged)
         try:
             rooms_url = reverse("rooms_for_building")
         except Exception:
             rooms_url = ""
-        if "building" in self.fields:
-            self.fields["building"].widget.attrs["data-rooms-url"] = rooms_url
+        self.fields["building"].widget.attrs["data-rooms-url"] = rooms_url
 
-        # By default: NO rooms shown until building is selected
-        self.fields["room"].queryset = Room.objects.none()
+        # 🔥 IMPORTANT FIX 🔥
+        # Determine building from POST, instance, or initial
+        building = None
 
-        # If editing an existing reservation:
-        if self.instance and getattr(self.instance, "pk", None):
-            room = getattr(self.instance, "room", None)
-            if room:
-                building = room.building
-                self.fields["building"].initial = building
+        if self.data.get("building"):
+            building = self.data.get("building")
+        elif self.instance.pk and self.instance.room:
+            building = self.instance.room.building_id
 
-                # Filter rooms for only that building
-                self.fields["room"].queryset = (
-                    Room.objects.filter(building=building)
-                    .select_related("floor")
-                    .annotate(_num_int=Cast("number", IntegerField()))
-                    .order_by("floor__number", "_num_int", "number")
-                )
+        if building:
+            self.fields["room"].queryset = (
+                Room.objects.filter(building_id=building)
+                .select_related("floor")
+                .annotate(_num_int=Cast("number", IntegerField()))
+                .order_by("floor__number", "_num_int", "number")
+            )
+            self.fields["building"].initial = building
+        else:
+            self.fields["room"].queryset = Room.objects.none()
 
-        # Always display rooms using pretty label
         self.fields["room"].label_from_instance = format_room_option
-    
-    def clean(self):
-        cleaned = super().clean()
-
-        room_field = self.fields["room"]
-
-        # Apply the safe queryset fix from admin
-        if hasattr(room_field, "safe_queryset_builder"):
-            room_field.queryset = room_field.safe_queryset_builder(self)
-
-        return cleaned
