@@ -87,9 +87,9 @@ class ReservationAdminForm(forms.ModelForm):
             self.fields["room"].queryset = qs
             self.fields["building"].initial = building
 
-            # ✅ FIX: ensure room is pre-selected when editing
+                # ✅ FIX: ensure room is pre-selected when editing
             if self.instance.pk and self.instance.room:
-                self.fields["room"].initial = self.instance.room
+                self.initial["room"] = self.instance.room.pk
 
         else:
             self.fields["room"].queryset = Room.objects.none()
