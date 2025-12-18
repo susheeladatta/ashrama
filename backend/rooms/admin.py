@@ -9,20 +9,10 @@ from .models import Building, Floor, Room, Guest, Reservation
 from .forms import RoomAdminForm, ReservationAdminForm
 
 from django.db.models import (
-    Case, When, Value, BooleanField, Q,
+    Case, When, Value, BooleanField,
     Exists, OuterRef
 )
 from django.utils import timezone
-
-
-# # ---------- Autocomplete for Floor (DAL) ----------
-# class FloorAutocomplete(autocomplete.Select2QuerySetView):
-#     def get_queryset(self):
-#         qs = Floor.objects.all()
-#         building_id = self.forwarded.get("building")
-#         if building_id:
-#             qs = qs.filter(building_id=building_id)
-#         return qs
 
 
 # ---------- Inline forms ----------
@@ -40,20 +30,18 @@ class RoomInline(nested_admin.NestedTabularInline):
         "number", "room_type", "capacity",
         "has_fan", "has_attached_bathroom", "has_kitchen",
         "donation_due",
-        "current_availability",   # computed, read-only
+        "current_availability",
         "needs_repair", "needs_supplies", "needs_cleaning",
     )
     readonly_fields = ("current_availability",)
     show_change_link = True
 
     def current_availability(self, obj):
-        # Real-time, derived from reservations
         return obj.get_availability_status()
     current_availability.short_description = "Is available (now)"
 
 
 class FloorInline(nested_admin.NestedStackedInline):
-    """Show only the Floor header; rooms remain fully editable underneath."""
     model = Floor
     form = EmptyFloorForm
     extra = 0
@@ -69,7 +57,6 @@ class BuildingAdmin(nested_admin.NestedModelAdmin):
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
-        # Fast count of related rooms
         return qs.annotate(_rooms_count=Count("rooms"))
 
     @admin.display(ordering="_rooms_count", description="Rooms")
@@ -83,10 +70,6 @@ class BuildingAdmin(nested_admin.NestedModelAdmin):
         css = {"all": ("admin/collapsible_inlines.css",)}
 
     def save_formset(self, request, form, formset, change):
-        """
-        - Auto-number floors created via the inline (since the field is hidden)
-        - Keep Room.building in sync with Room.floor
-        """
         instances = formset.save(commit=False)
 
         for obj in instances:
@@ -111,17 +94,16 @@ class BuildingAdmin(nested_admin.NestedModelAdmin):
         formset.save_m2m()
 
 
-# ---------- Hide Floor in the left menu, keep usable in inlines ----------
 class _HiddenModelAdmin(admin.ModelAdmin):
     def get_model_perms(self, request):
         return {}
+
 
 @admin.register(Floor)
 class FloorAdmin(_HiddenModelAdmin):
     pass
 
 
-# ---------- Real-time Availability filter (sidebar) ----------
 class RealAvailabilityFilter(SimpleListFilter):
     title = "Real-time availability"
     parameter_name = "rt_available"
@@ -147,10 +129,9 @@ class RealAvailabilityFilter(SimpleListFilter):
         )
         queryset = queryset.annotate(_is_available_now=is_available_now)
 
-        val = self.value()
-        if val == "1":
+        if self.value() == "1":
             return queryset.filter(_is_available_now=True)
-        if val == "0":
+        if self.value() == "0":
             return queryset.filter(_is_available_now=False)
         return queryset
 
@@ -161,11 +142,11 @@ class RoomAdmin(admin.ModelAdmin):
 
     list_display = [
         "number",
-        "get_building_info",           # sortable by building name
+        "get_building_info",
         "room_type",
         "capacity",
         "has_fan",
-        "get_availability_status",     # real-time availability (sortable)
+        "get_availability_status",
         "has_attached_bathroom",
         "has_kitchen",
         "donation_due",
@@ -173,9 +154,7 @@ class RoomAdmin(admin.ModelAdmin):
         "needs_supplies",
         "contents_summary",
     ]
-    list_display_links = ["number"]
 
-    # Sidebar filters
     list_filter = [
         "building",
         "room_type",
@@ -188,90 +167,24 @@ class RoomAdmin(admin.ModelAdmin):
         "is_available",
     ]
 
-    search_fields = ["number", "building__name", "floor__number"]
-
-    fieldsets = (
-        ("Location", {"fields": ("building", "floor")}),
-        ("Basic", {"fields": ("number", "room_type", "capacity", "donation_due", "is_available")}),
-        ("Facilities", {"fields": ("has_fan", "has_attached_bathroom", "has_kitchen")}),
-        ("Maintenance", {"fields": ("needs_repair", "repair_notes", "needs_supplies", "supply_notes", "needs_cleaning")}),
-        ("Room Contents", {"fields": ("beds", "pillows", "mats", "foldable_cots", "chairs", "stools")}),
-        ("Notes", {"fields": ("notes",)}),
-    )
-
     class Media:
         js = ("admin/room_admin.js",)
 
     def contents_summary(self, obj):
         return obj.get_contents_summary()
-    contents_summary.short_description = "Room Contents"
-
-    @admin.display(ordering="_is_available_now", description="Availability")
-    def get_availability_status(self, obj):
-        return obj.get_availability_status()
 
     def get_building_info(self, obj):
         b = obj.building.name if obj.building else ""
         f = obj.floor.number if obj.floor else ""
         return f"{b} – Floor {f}"
-    get_building_info.short_description = "Building – Floor"
-    get_building_info.admin_order_field = "building__name"
-
-    def get_queryset(self, request):
-        qs = (
-            super()
-            .get_queryset(request)
-            .select_related("building", "floor")
-            .prefetch_related("reservation_set")
-        )
-
-        today = timezone.now().date()
-        occupied_now = Exists(
-            Reservation.objects.filter(
-                room=OuterRef("pk"),
-                is_cancelled=False,
-                is_checked_out=False,
-                check_in_date__lte=today,
-                check_out_date__gt=today,
-            )
-        )
-        is_available_now = Case(
-            When(occupied_now, then=Value(False)),
-            default=Value(True),
-            output_field=BooleanField(),
-        )
-
-        return qs.annotate(_is_available_now=is_available_now)
 
 
 @admin.register(Guest)
 class GuestAdmin(admin.ModelAdmin):
-    # thumbnail first
     list_display = ["photo_thumb", "full_name", "phone_number", "email", "country", "city"]
-    search_fields = ["full_name", "phone_number", "email", "country", "city"]
-    readonly_fields = ("photo_preview",)
-
-    # Form fields order (only the main photo has a preview)
-    fields = (
-        "full_name",
-        ("country", "city"),
-        ("phone_number", "email"),
-        "id_document",
-        "notes",
-        "photo",          # profile photo upload
-        "photo_preview",  # read-only preview (main photo only)
-        "passport_scan",  # NEW: no preview
-        "visa_scan",      # NEW: no preview
-    )
 
 
-# Re-register Reservation with custom form
-try:
-    admin.site.unregister(Reservation)
-except admin.sites.NotRegistered:
-    pass
-
-
+# ---------- Reservation (FIXED) ----------
 @admin.register(Reservation)
 class ReservationAdmin(admin.ModelAdmin):
     class Media:
@@ -280,47 +193,11 @@ class ReservationAdmin(admin.ModelAdmin):
     form = ReservationAdminForm
     filter_horizontal = ("guests",)
 
-    def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        field = super().formfield_for_foreignkey(db_field, request, **kwargs)
-
-        if db_field.name == "room":
-            qs = Room.objects.all()
-
-            # Works for both GET (change view) and POST
-            object_id = (
-                request.resolver_match.kwargs.get("object_id")
-                if request.resolver_match
-                else None
-            )
-
-            if object_id:
-                try:
-                    reservation = Reservation.objects.select_related(
-                        "room", "room__building"
-                    ).get(pk=object_id)
-
-                    qs = Room.objects.filter(
-                        Q(building=reservation.room.building)
-                        | Q(pk=reservation.room.pk)
-                    )
-
-                except Reservation.DoesNotExist:
-                    pass
-
-            field.queryset = qs.distinct()
-
-        return field
-
     def get_fields(self, request, obj=None):
         fields = list(super().get_fields(request, obj))
-
         if "room" in fields:
             if "building" in fields:
                 fields.remove("building")
             idx = fields.index("room")
             fields.insert(idx, "building")
-        else:
-            if "building" not in fields:
-                fields.append("building")
-
         return fields
