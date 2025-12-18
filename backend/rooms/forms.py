@@ -62,7 +62,7 @@ class ReservationAdminForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # Attach AJAX URL (unchanged)
+        # Attach AJAX URL
         try:
             self.fields["building"].widget.attrs["data-rooms-url"] = reverse("rooms_for_building")
         except Exception:
@@ -70,28 +70,28 @@ class ReservationAdminForm(forms.ModelForm):
 
         room_qs = Room.objects.none()
 
-        # -------------------------------------------------
-        # CASE 1: Editing existing reservation
-        # -------------------------------------------------
+        # -----------------------------------------
+        # Editing existing reservation
+        # -----------------------------------------
         if self.instance.pk and self.instance.room_id:
             instance_room = self.instance.room
 
-            room_qs = Room.objects.filter(
-                Q(pk=instance_room.pk) |
-                Q(building_id=instance_room.building_id)
+            room_qs = (
+                Room.objects.filter(pk=instance_room.pk)
+                | Room.objects.filter(building_id=instance_room.building_id)
             )
 
             self.initial["building"] = instance_room.building_id
 
-        # -------------------------------------------------
-        # CASE 2: Adding OR POST-back with building selected
-        # -------------------------------------------------
+        # -----------------------------------------
+        # Add form or POST-back
+        # -----------------------------------------
         building_id = self.data.get("building") or self.initial.get("building")
 
         if building_id:
-            room_qs = Room.objects.filter(
-                Q(building_id=building_id) |
-                Q(pk=getattr(self.instance, "room_id", None))
+            room_qs = (
+                Room.objects.filter(building_id=building_id)
+                | Room.objects.filter(pk=getattr(self.instance, "room_id", None))
             )
 
         self.fields["room"].queryset = (
