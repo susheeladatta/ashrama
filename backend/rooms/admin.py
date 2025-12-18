@@ -281,13 +281,16 @@ class ReservationAdmin(admin.ModelAdmin):
     filter_horizontal = ("guests",)
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        field = super().formfield_for_foreignkey(db_field, request, **kwargs)
+
         if db_field.name == "room":
             qs = Room.objects.all()
 
-            # Get reservation id safely (works for GET + POST)
+            # Works for both GET (change view) and POST
             object_id = (
                 request.resolver_match.kwargs.get("object_id")
-                or request.POST.get("_obj_id")
+                if request.resolver_match
+                else None
             )
 
             if object_id:
@@ -300,15 +303,17 @@ class ReservationAdmin(admin.ModelAdmin):
                         Q(building=reservation.room.building)
                         | Q(pk=reservation.room.pk)
                     )
+
                 except Reservation.DoesNotExist:
                     pass
 
-            kwargs["queryset"] = qs.distinct()
+            field.queryset = qs.distinct()
 
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+        return field
 
     def get_fields(self, request, obj=None):
         fields = list(super().get_fields(request, obj))
+
         if "room" in fields:
             if "building" in fields:
                 fields.remove("building")
@@ -317,4 +322,5 @@ class ReservationAdmin(admin.ModelAdmin):
         else:
             if "building" not in fields:
                 fields.append("building")
+
         return fields
