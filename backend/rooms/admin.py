@@ -280,40 +280,29 @@ class ReservationAdmin(admin.ModelAdmin):
     form = ReservationAdminForm
     filter_horizontal = ("guests",)
 
-    def get_form(self, request, obj=None, **kwargs):
-        """
-        FIX: Ensure room queryset is not empty during POST.
-        Always allow the currently-selected room even if building filtering
-        would normally exclude it.
-        """
-        form = super().get_form(request, obj, **kwargs)
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "room":
+            qs = Room.objects.all()
 
-        original_get_queryset = form.base_fields["room"].queryset
+            # Editing existing reservation
+            object_id = request.resolver_match.kwargs.get("object_id")
+            if object_id:
+                try:
+                    reservation = Reservation.objects.select_related(
+                        "room", "room__building"
+                    ).get(pk=object_id)
 
-        def _safe_queryset(form_instance):
-            qs = original_get_queryset
-            building = (
-                form_instance.cleaned_data.get("building")
-                or (obj.building if obj else None)
-            )
+                    # Filter by building BUT keep selected room
+                    qs = Room.objects.filter(
+                        Q(building=reservation.room.building)
+                        | Q(pk=reservation.room.pk)
+                    )
+                except Reservation.DoesNotExist:
+                    pass
 
-            # Filter normally by building
-            if building:
-                qs = qs.filter(building=building)
+            kwargs["queryset"] = qs.distinct()
 
-            # Ensure the selected room remains valid
-            selected_room = (
-                form_instance.cleaned_data.get("room")
-                or (obj.room if obj else None)
-            )
-            if selected_room:
-                qs = qs | original_get_queryset.filter(pk=selected_room.pk)
-
-            return qs.distinct()
-
-        form.base_fields["room"].get_limit_choices_to = lambda: {}
-        form.base_fields["room"].safe_queryset_builder = _safe_queryset
-        return form
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
     def get_fields(self, request, obj=None):
         fields = list(super().get_fields(request, obj))
