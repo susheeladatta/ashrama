@@ -3,18 +3,21 @@ from django import forms
 from django.contrib import admin
 from django.contrib.admin import SimpleListFilter
 from django.db.models import Max, Count
+#from dal import autocomplete
+
+from .models import Building, Floor, Room, Guest, Reservation
+from .forms import RoomAdminForm, ReservationAdminForm
+
 from django.db.models import (
     Case, When, Value, BooleanField,
     Exists, OuterRef
 )
 from django.utils import timezone
 
-from .models import Building, Floor, Room, Guest, Reservation
-from .forms import RoomAdminForm, ReservationAdminForm
-
 
 # ---------- Inline forms ----------
 class EmptyFloorForm(forms.ModelForm):
+    """Render NO visible fields for Floor inside the Building page."""
     class Meta:
         model = Floor
         fields = []
@@ -35,7 +38,6 @@ class RoomInline(nested_admin.NestedTabularInline):
 
     def current_availability(self, obj):
         return obj.get_availability_status()
-
     current_availability.short_description = "Is available (now)"
 
 
@@ -66,6 +68,30 @@ class BuildingAdmin(nested_admin.NestedModelAdmin):
     class Media:
         js = ("admin/collapsible_inlines.js",)
         css = {"all": ("admin/collapsible_inlines.css",)}
+
+    def save_formset(self, request, form, formset, change):
+        instances = formset.save(commit=False)
+
+        for obj in instances:
+            if isinstance(obj, Floor):
+                if not obj.number:
+                    current_max = (
+                        Floor.objects.filter(building=form.instance)
+                        .aggregate(Max("number"))["number__max"]
+                        or 0
+                    )
+                    obj.number = current_max + 1
+                obj.building = form.instance
+                obj.save()
+
+            elif isinstance(obj, Room):
+                if obj.floor_id and (obj.building_id != obj.floor.building_id):
+                    obj.building_id = obj.floor.building_id
+                obj.save()
+
+        for obj in formset.deleted_objects:
+            obj.delete()
+        formset.save_m2m()
 
 
 class _HiddenModelAdmin(admin.ModelAdmin):
@@ -114,13 +140,6 @@ class RealAvailabilityFilter(SimpleListFilter):
 class RoomAdmin(admin.ModelAdmin):
     form = RoomAdminForm
 
-    # ✅ REQUIRED FIX (this is what was missing)
-    search_fields = (
-        "number",
-        "building__name",
-        "floor__number",
-    )
-
     list_display = [
         "number",
         "get_building_info",
@@ -162,14 +181,7 @@ class RoomAdmin(admin.ModelAdmin):
 
 @admin.register(Guest)
 class GuestAdmin(admin.ModelAdmin):
-    list_display = [
-        "photo_thumb",
-        "full_name",
-        "phone_number",
-        "email",
-        "country",
-        "city",
-    ]
+    list_display = ["photo_thumb", "full_name", "phone_number", "email", "country", "city"]
 
 
 @admin.register(Reservation)
@@ -180,8 +192,7 @@ class ReservationAdmin(admin.ModelAdmin):
     form = ReservationAdminForm
     filter_horizontal = ("guests",)
 
-    # ✅ This is correct and should stay
-    autocomplete_fields = ("room",)
+    autocomplete_fields = ("room",)  # ← ✅ FIX (THIS SOLVES IT)
 
     def get_fields(self, request, obj=None):
         fields = list(super().get_fields(request, obj))
