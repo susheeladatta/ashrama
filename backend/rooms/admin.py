@@ -284,15 +284,18 @@ class ReservationAdmin(admin.ModelAdmin):
         if db_field.name == "room":
             qs = Room.objects.all()
 
-            # Editing existing reservation
-            object_id = request.resolver_match.kwargs.get("object_id")
+            # Get reservation id safely (works for GET + POST)
+            object_id = (
+                request.resolver_match.kwargs.get("object_id")
+                or request.POST.get("_obj_id")
+            )
+
             if object_id:
                 try:
                     reservation = Reservation.objects.select_related(
                         "room", "room__building"
                     ).get(pk=object_id)
 
-                    # Filter by building BUT keep selected room
                     qs = Room.objects.filter(
                         Q(building=reservation.room.building)
                         | Q(pk=reservation.room.pk)
