@@ -184,6 +184,7 @@ class GuestAdmin(admin.ModelAdmin):
     list_display = ["photo_thumb", "full_name", "phone_number", "email", "country", "city"]
 
 
+# ---------- Reservation (FIXED) ----------
 @admin.register(Reservation)
 class ReservationAdmin(admin.ModelAdmin):
     class Media:
@@ -191,8 +192,6 @@ class ReservationAdmin(admin.ModelAdmin):
 
     form = ReservationAdminForm
     filter_horizontal = ("guests",)
-
-    autocomplete_fields = ("room",)  # ← ✅ FIX (THIS SOLVES IT)
 
     def get_fields(self, request, obj=None):
         fields = list(super().get_fields(request, obj))
