@@ -191,7 +191,7 @@ class ReservationAdmin(admin.ModelAdmin):
     filter_horizontal = ("guests",)
     
     # Use custom template for debugging
-    change_form_template = "ashrama/backend/rooms/reservation/change_form.html"
+    change_form_template = "D:/ashrama/backend/rooms/reservation/change_form.html"
     
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
