@@ -45,7 +45,7 @@ class RoomAdminForm(forms.ModelForm):
 
 
 # ---------------------------------------------------------
-# RESERVATION ADMIN FORM (your original logic preserved 100%)
+# RESERVATION ADMIN FORM - FIXED
 # ---------------------------------------------------------
 class ReservationAdminForm(forms.ModelForm):
     building = forms.ModelChoiceField(
@@ -68,32 +68,33 @@ class ReservationAdminForm(forms.ModelForm):
         except Exception:
             pass
 
-        room_qs = Room.objects.none()
-
-        # -----------------------------------------
-        # Editing existing reservation
-        # -----------------------------------------
-        if self.instance.pk and self.instance.room_id:
+        # Get the current room from the instance if it exists
+        instance_room = None
+        if self.instance and self.instance.pk and self.instance.room_id:
             instance_room = self.instance.room
-
-            room_qs = (
-                Room.objects.filter(pk=instance_room.pk)
-                | Room.objects.filter(building_id=instance_room.building_id)
-            )
-
-            self.initial["building"] = instance_room.building_id
-
-        # -----------------------------------------
-        # Add form or POST-back
-        # -----------------------------------------
-        building_id = self.data.get("building") or self.initial.get("building")
-
+        
+        # Initialize building from the instance's room if available
+        if instance_room and instance_room.building_id:
+            self.initial['building'] = instance_room.building_id
+            building_id = instance_room.building_id
+        else:
+            # Try to get building from POST/GET data
+            building_id = self.data.get("building") if self.data else None
+        
+        # Build the room queryset
+        room_qs = Room.objects.all()
+        
+        # If we have a building ID, filter by it
         if building_id:
-            room_qs = (
-                Room.objects.filter(building_id=building_id)
-                | Room.objects.filter(pk=getattr(self.instance, "room_id", None))
-            )
-
+            room_qs = room_qs.filter(building_id=building_id)
+        
+        # ALWAYS include the current room in the queryset if it exists
+        # This is crucial for the edit form to show the selected room
+        if instance_room:
+            # Create a union queryset that includes the current room
+            room_qs = (room_qs | Room.objects.filter(pk=instance_room.pk)).distinct()
+        
+        # Apply ordering and formatting
         self.fields["room"].queryset = (
             room_qs
             .select_related("floor")
@@ -103,3 +104,16 @@ class ReservationAdminForm(forms.ModelForm):
         )
 
         self.fields["room"].label_from_instance = format_room_option
+    
+    def clean(self):
+        cleaned_data = super().clean()
+        room = cleaned_data.get('room')
+        
+        # If we're editing and room exists, ensure building matches room's building
+        if self.instance and self.instance.pk and room:
+            building = cleaned_data.get('building')
+            if not building and room.building:
+                # Set building based on the room
+                cleaned_data['building'] = room.building
+        
+        return cleaned_data
