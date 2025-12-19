@@ -2,7 +2,7 @@
 from django import forms
 from django.urls import reverse
 from django.db.models.functions import Cast
-from django.db.models import IntegerField
+from django.db.models import IntegerField, Q
 
 from .models import Room, Reservation, Building, Floor
 from .utils import format_room_option
@@ -45,7 +45,7 @@ class RoomAdminForm(forms.ModelForm):
 
 
 # ---------------------------------------------------------
-# RESERVATION ADMIN FORM - COMPLETELY FIXED
+# RESERVATION ADMIN FORM - FIXED WITHOUT UNION ISSUES
 # ---------------------------------------------------------
 class ReservationAdminForm(forms.ModelForm):
     building = forms.ModelChoiceField(
@@ -68,17 +68,17 @@ class ReservationAdminForm(forms.ModelForm):
         except Exception:
             pass
 
-        # Get the current instance's room if it exists
-        current_room = None
-        if self.instance and self.instance.pk:
+        # Get current room from instance if it exists
+        current_room_id = None
+        if self.instance and self.instance.pk and self.instance.room_id:
+            current_room_id = self.instance.room_id
             try:
                 current_room = self.instance.room
+                # Set initial building value based on current room
+                if current_room and current_room.building_id:
+                    self.initial['building'] = current_room.building_id
             except Room.DoesNotExist:
                 current_room = None
-
-        # Set initial building value based on current room
-        if current_room and current_room.building:
-            self.initial['building'] = current_room.building.id
 
         # Determine which building to use for filtering
         # Priority: POST data > initial building > None
@@ -92,23 +92,26 @@ class ReservationAdminForm(forms.ModelForm):
         elif 'building' in self.initial and self.initial['building']:
             # Initial value from instance
             building_id = self.initial['building']
+
+        # Build the room queryset using Q objects instead of union
+        # This is the key fix: use Q objects to combine conditions
+        conditions = Q()
         
-        # Build the room queryset
         if building_id:
-            # Filter rooms by the selected building
-            room_qs = Room.objects.filter(building_id=building_id)
-            
-            # IMPORTANT: Always include the current room if it exists
-            # This ensures the room appears in the dropdown even if it's from a different building
-            if current_room and current_room.pk:
-                room_qs = (room_qs | Room.objects.filter(pk=current_room.pk)).distinct()
-        else:
-            # No building selected, show all rooms
-            room_qs = Room.objects.all()
+            # Add condition for rooms in the selected building
+            conditions |= Q(building_id=building_id)
         
-        # Always include the current room in the queryset
-        if current_room and current_room.pk:
-            room_qs = (room_qs | Room.objects.filter(pk=current_room.pk)).distinct()
+        # CRITICAL: Always include the current room if it exists
+        # This ensures the room appears in the dropdown
+        if current_room_id:
+            conditions |= Q(pk=current_room_id)
+        
+        # If no conditions, get all rooms
+        if not conditions:
+            conditions = Q()  # Empty Q object will match all
+        
+        # Build the queryset with the combined conditions
+        room_qs = Room.objects.filter(conditions).distinct()
         
         # Apply ordering and formatting
         self.fields["room"].queryset = (
@@ -116,7 +119,6 @@ class ReservationAdminForm(forms.ModelForm):
             .select_related("floor")
             .annotate(_num_int=Cast("number", IntegerField()))
             .order_by("floor__number", "_num_int", "number")
-            .distinct()
         )
 
         self.fields["room"].label_from_instance = format_room_option
