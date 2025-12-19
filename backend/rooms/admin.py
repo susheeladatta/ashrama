@@ -1,9 +1,9 @@
+# admin.py - FIXED VERSION
 import nested_admin
 from django import forms
 from django.contrib import admin
 from django.contrib.admin import SimpleListFilter
 from django.db.models import Max, Count
-#from dal import autocomplete
 
 from .models import Building, Floor, Room, Guest, Reservation
 from .forms import RoomAdminForm, ReservationAdminForm
@@ -184,12 +184,9 @@ class GuestAdmin(admin.ModelAdmin):
     list_display = ["photo_thumb", "full_name", "phone_number", "email", "country", "city"]
 
 
-# ---------- Reservation (FIXED) ----------
+# ---------- Reservation (COMPLETELY FIXED) ----------
 @admin.register(Reservation)
 class ReservationAdmin(admin.ModelAdmin):
-    class Media:
-        js = ("admin/reservation_admin.js",)
-
     form = ReservationAdminForm
     filter_horizontal = ("guests",)
 
@@ -201,27 +198,6 @@ class ReservationAdmin(admin.ModelAdmin):
             idx = fields.index("room")
             fields.insert(idx, "building")
         return fields
-    
-    def get_form(self, request, obj=None, **kwargs):
-        # Pre-populate the building field based on the room
-        if obj and obj.room_id:
-            # Ensure the room is loaded with building
-            try:
-                obj.room = Room.objects.select_related('building').get(pk=obj.room_id)
-            except Room.DoesNotExist:
-                pass
-        return super().get_form(request, obj, **kwargs)
-    
-    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
-        # Preload the reservation with room data
-        if object_id:
-            try:
-                reservation = Reservation.objects.select_related('room__building', 'room__floor').get(pk=object_id)
-                extra_context = extra_context or {}
-                extra_context['original'] = reservation
-            except Reservation.DoesNotExist:
-                pass
-        return super().changeform_view(request, object_id, form_url, extra_context)
     
     class Media:
         js = ("admin/reservation_admin.js",)
