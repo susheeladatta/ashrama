@@ -2,7 +2,7 @@
 from django import forms
 from django.urls import reverse
 from django.db.models.functions import Cast
-from django.db.models import IntegerField, Q
+from django.db.models import IntegerField
 
 from .models import Room, Reservation, Building, Floor
 from .utils import format_room_option
@@ -45,7 +45,7 @@ class RoomAdminForm(forms.ModelForm):
 
 
 # ---------------------------------------------------------
-# RESERVATION ADMIN FORM - FIXED
+# RESERVATION ADMIN FORM - COMPLETELY FIXED
 # ---------------------------------------------------------
 class ReservationAdminForm(forms.ModelForm):
     building = forms.ModelChoiceField(
@@ -68,31 +68,47 @@ class ReservationAdminForm(forms.ModelForm):
         except Exception:
             pass
 
-        # Get the current room from the instance if it exists
-        instance_room = None
-        if self.instance and self.instance.pk and self.instance.room_id:
-            instance_room = self.instance.room
-        
-        # Initialize building from the instance's room if available
-        if instance_room and instance_room.building_id:
-            self.initial['building'] = instance_room.building_id
-            building_id = instance_room.building_id
-        else:
-            # Try to get building from POST/GET data
-            building_id = self.data.get("building") if self.data else None
+        # Get the current instance's room if it exists
+        current_room = None
+        if self.instance and self.instance.pk:
+            try:
+                current_room = self.instance.room
+            except Room.DoesNotExist:
+                current_room = None
+
+        # Set initial building value based on current room
+        if current_room and current_room.building:
+            self.initial['building'] = current_room.building.id
+
+        # Determine which building to use for filtering
+        # Priority: POST data > initial building > None
+        building_id = None
+        if self.data and 'building' in self.data and self.data['building']:
+            # Form is being submitted or AJAX request
+            try:
+                building_id = int(self.data['building'])
+            except (ValueError, TypeError):
+                pass
+        elif 'building' in self.initial and self.initial['building']:
+            # Initial value from instance
+            building_id = self.initial['building']
         
         # Build the room queryset
-        room_qs = Room.objects.all()
-        
-        # If we have a building ID, filter by it
         if building_id:
-            room_qs = room_qs.filter(building_id=building_id)
+            # Filter rooms by the selected building
+            room_qs = Room.objects.filter(building_id=building_id)
+            
+            # IMPORTANT: Always include the current room if it exists
+            # This ensures the room appears in the dropdown even if it's from a different building
+            if current_room and current_room.pk:
+                room_qs = (room_qs | Room.objects.filter(pk=current_room.pk)).distinct()
+        else:
+            # No building selected, show all rooms
+            room_qs = Room.objects.all()
         
-        # ALWAYS include the current room in the queryset if it exists
-        # This is crucial for the edit form to show the selected room
-        if instance_room:
-            # Create a union queryset that includes the current room
-            room_qs = (room_qs | Room.objects.filter(pk=instance_room.pk)).distinct()
+        # Always include the current room in the queryset
+        if current_room and current_room.pk:
+            room_qs = (room_qs | Room.objects.filter(pk=current_room.pk)).distinct()
         
         # Apply ordering and formatting
         self.fields["room"].queryset = (
@@ -104,16 +120,16 @@ class ReservationAdminForm(forms.ModelForm):
         )
 
         self.fields["room"].label_from_instance = format_room_option
-    
+
     def clean(self):
         cleaned_data = super().clean()
-        room = cleaned_data.get('room')
         
-        # If we're editing and room exists, ensure building matches room's building
-        if self.instance and self.instance.pk and room:
+        # Ensure the room field gets the correct value
+        room = cleaned_data.get('room')
+        if room and self.instance and self.instance.pk:
+            # Update the building field based on the selected room
             building = cleaned_data.get('building')
             if not building and room.building:
-                # Set building based on the room
                 cleaned_data['building'] = room.building
         
         return cleaned_data

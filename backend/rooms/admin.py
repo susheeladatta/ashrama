@@ -201,3 +201,8 @@ class ReservationAdmin(admin.ModelAdmin):
             idx = fields.index("room")
             fields.insert(idx, "building")
         return fields
+    
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        # Ensure the form instance has access to the current object
+        return form
