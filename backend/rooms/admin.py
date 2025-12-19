@@ -187,21 +187,11 @@ class GuestAdmin(admin.ModelAdmin):
 # ---------- Reservation (FIXED) ----------
 @admin.register(Reservation)
 class ReservationAdmin(admin.ModelAdmin):
+    class Media:
+        js = ("admin/reservation_admin.js",)
+
     form = ReservationAdminForm
     filter_horizontal = ("guests",)
-    
-    # Use custom template for debugging
-    change_form_template = "D:/ashrama/backend/rooms/reservation/change_form.html"
-    
-    def get_form(self, request, obj=None, **kwargs):
-        form = super().get_form(request, obj, **kwargs)
-        # Preload the room for the instance
-        if obj and hasattr(obj, 'room_id') and obj.room_id:
-            try:
-                obj.room = Room.objects.select_related('building', 'floor').get(pk=obj.room_id)
-            except Room.DoesNotExist:
-                pass
-        return form
 
     def get_fields(self, request, obj=None):
         fields = list(super().get_fields(request, obj))
@@ -211,7 +201,17 @@ class ReservationAdmin(admin.ModelAdmin):
             idx = fields.index("room")
             fields.insert(idx, "building")
         return fields
-
+    
+    def get_form(self, request, obj=None, **kwargs):
+        # Pre-populate the building field based on the room
+        if obj and obj.room_id:
+            # Ensure the room is loaded with building
+            try:
+                obj.room = Room.objects.select_related('building').get(pk=obj.room_id)
+            except Room.DoesNotExist:
+                pass
+        return super().get_form(request, obj, **kwargs)
+    
     def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
         # Preload the reservation with room data
         if object_id:

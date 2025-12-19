@@ -1,9 +1,8 @@
-# rooms/forms.py - COMPLETE REWRITE
+# forms.py - Simplified fix
 from django import forms
 from django.urls import reverse
 from django.db.models.functions import Cast
 from django.db.models import IntegerField
-from django.core.exceptions import ValidationError
 
 from .models import Room, Reservation, Building, Floor
 from .utils import format_room_option
@@ -39,7 +38,7 @@ class RoomAdminForm(forms.ModelForm):
 
 
 # ---------------------------------------------------------
-# RESERVATION ADMIN FORM - COMPLETE FIX
+# RESERVATION ADMIN FORM - SIMPLE WORKING SOLUTION
 # ---------------------------------------------------------
 class ReservationAdminForm(forms.ModelForm):
     building = forms.ModelChoiceField(
@@ -48,12 +47,6 @@ class ReservationAdminForm(forms.ModelForm):
         label="Building",
         help_text="Select a building first to filter the room list.",
     )
-    
-    # This is a custom field to help with debugging
-    debug_room_id = forms.CharField(
-        required=False,
-        widget=forms.HiddenInput(),
-    )
 
     class Meta:
         model = Reservation
@@ -61,88 +54,73 @@ class ReservationAdminForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
-        # Debug logging
-        print(f"DEBUG: Form initialized with instance: {self.instance}")
-        print(f"DEBUG: Instance has room_id: {getattr(self.instance, 'room_id', None)}")
-        
-        # Attach AJAX URL
+
+        # Attach AJAX URL for building-room filtering
         try:
             self.fields["building"].widget.attrs["data-rooms-url"] = reverse("rooms_for_building")
         except Exception:
             pass
 
-        # IMPORTANT: Always get fresh room data to avoid stale references
-        room_instance = None
-        if self.instance and self.instance.pk and self.instance.room_id:
-            try:
-                # Get the room with all related data
-                room_instance = Room.objects.select_related('building', 'floor').get(pk=self.instance.room_id)
-                # Update the instance's room with the fresh data
-                self.instance.room = room_instance
-                print(f"DEBUG: Loaded room: {room_instance}")
-            except Room.DoesNotExist:
-                print("DEBUG: Room does not exist")
-                room_instance = None
+        # STEP 1: Get current room and building
+        current_room = None
+        current_room_id = None
+        current_building_id = None
         
-        # Set initial building value
-        if room_instance and room_instance.building:
-            self.initial['building'] = room_instance.building_id
-            print(f"DEBUG: Set initial building to: {room_instance.building_id}")
-        
-        # Set debug field
-        if self.instance.room_id:
-            self.initial['debug_room_id'] = self.instance.room_id
-        
-        # Get building from POST data or initial
-        building_id = None
-        if self.data and 'building' in self.data:
-            building_id = self.data.get('building')
-        elif 'building' in self.initial:
-            building_id = self.initial.get('building')
-        
-        print(f"DEBUG: Building ID for filtering: {building_id}")
-        
-        # Build the room queryset
-        # CRITICAL: Always start with the current room if it exists
-        room_ids_to_include = []
-        if self.instance.room_id:
-            room_ids_to_include.append(self.instance.room_id)
-        
-        # Create base queryset
-        if room_ids_to_include:
-            # Start with current room
-            room_qs = Room.objects.filter(pk__in=room_ids_to_include)
+        if self.instance and self.instance.pk:
+            # Try to get room from prefetched data or fresh query
+            if hasattr(self.instance, 'room') and self.instance.room:
+                current_room = self.instance.room
+            elif self.instance.room_id:
+                try:
+                    current_room = Room.objects.get(pk=self.instance.room_id)
+                except Room.DoesNotExist:
+                    pass
             
-            # Add rooms from selected building if different
-            if building_id:
-                room_qs = room_qs | Room.objects.filter(building_id=building_id)
-        elif building_id:
-            # No current room, just filter by building
-            room_qs = Room.objects.filter(building_id=building_id)
+            if current_room:
+                current_room_id = current_room.pk
+                current_building_id = current_room.building_id if current_room.building else None
+        
+        # STEP 2: Set initial building value
+        if current_building_id:
+            self.initial['building'] = current_building_id
+        
+        # STEP 3: Determine building for filtering
+        building_id = None
+        if self.data and 'building' in self.data and self.data['building']:
+            # Use building from POST/GET data if available
+            try:
+                building_id = int(self.data['building'])
+            except (ValueError, TypeError):
+                pass
+        elif current_building_id:
+            # Otherwise use the building from current room
+            building_id = current_building_id
+        
+        # STEP 4: Build room queryset that ALWAYS includes current room
+        if building_id:
+            # Get rooms from selected building PLUS current room
+            if current_room_id:
+                # Use Q objects to combine conditions safely
+                from django.db.models import Q
+                room_qs = Room.objects.filter(
+                    Q(building_id=building_id) | Q(pk=current_room_id)
+                ).distinct()
+            else:
+                room_qs = Room.objects.filter(building_id=building_id)
         else:
-            # No building selected, show limited set of rooms
-            room_qs = Room.objects.all()[:50]  # Limit to avoid performance issues
+            # No building selected, show all rooms
+            room_qs = Room.objects.all()
         
-        # Apply ordering
-        room_qs = room_qs.select_related('floor', 'building').distinct()
-        
-        # Annotate and order
-        room_qs = room_qs.annotate(_num_int=Cast("number", IntegerField()))
-        room_qs = room_qs.order_by("floor__number", "_num_int", "number")
-        
-        print(f"DEBUG: Room queryset count: {room_qs.count()}")
-        print(f"DEBUG: Room queryset includes current room: {self.instance.room_id in list(room_qs.values_list('pk', flat=True))}")
-        
-        self.fields["room"].queryset = room_qs
+        # STEP 5: Apply ordering
+        self.fields["room"].queryset = (
+            room_qs
+            .select_related("floor")
+            .annotate(_num_int=Cast("number", IntegerField()))
+            .order_by("floor__number", "_num_int", "number")
+        )
+
         self.fields["room"].label_from_instance = format_room_option
-        
-        # Force the room field to show the current room value
-        if self.instance.room_id:
-            self.initial['room'] = self.instance.room_id
 
     def clean(self):
         cleaned_data = super().clean()
-        print(f"DEBUG: Cleaned data room: {cleaned_data.get('room')}")
-        print(f"DEBUG: Cleaned data building: {cleaned_data.get('building')}")
         return cleaned_data
