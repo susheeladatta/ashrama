@@ -187,8 +187,28 @@ class GuestAdmin(admin.ModelAdmin):
 # ---------- Reservation (FINAL FIX) ----------
 @admin.register(Reservation)
 class ReservationAdmin(admin.ModelAdmin):
+    class Media:
+        js = ("admin/reservation_admin.js",)
+
     form = ReservationAdminForm
     filter_horizontal = ("guests",)
+
+    # ✅ ADD THIS
+    list_display = (
+        "__str__",
+        "is_checked_in",
+        "is_checked_out",
+        "is_cancelled",
+        "is_paid",
+    )
+
+    # Optional but recommended: makes boolean icons clickable filters
+    list_filter = (
+        "is_checked_in",
+        "is_checked_out",
+        "is_cancelled",
+        "is_paid",
+    )
 
     def get_fields(self, request, obj=None):
         fields = list(super().get_fields(request, obj))
@@ -197,7 +217,7 @@ class ReservationAdmin(admin.ModelAdmin):
                 fields.remove("building")
             idx = fields.index("room")
             fields.insert(idx, "building")
+        else:
+            if "building" not in fields:
+                fields.append("building")
         return fields
-
-    class Media:
-        js = ("admin/reservation_admin.js",)
