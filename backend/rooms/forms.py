@@ -1,4 +1,4 @@
-# rooms/forms.py - FIXED VERSION
+# rooms/forms.py - FINAL WORKING VERSION
 from django import forms
 from django.urls import reverse
 from django.db.models.functions import Cast
@@ -38,7 +38,7 @@ class RoomAdminForm(forms.ModelForm):
 
 
 # ---------------------------------------------------------
-# RESERVATION ADMIN FORM - WORKING FIX
+# RESERVATION ADMIN FORM - ULTIMATE FIX
 # ---------------------------------------------------------
 class ReservationAdminForm(forms.ModelForm):
     building = forms.ModelChoiceField(
@@ -61,51 +61,68 @@ class ReservationAdminForm(forms.ModelForm):
         except Exception:
             pass
 
-        # Get current room ID from instance
-        current_room_id = None
-        if self.instance and self.instance.pk and self.instance.room_id:
-            current_room_id = self.instance.room_id
-
-        # Set initial building value from current room's building
-        if current_room_id:
+        # Get the current reservation instance
+        instance = self.instance
+        
+        # Set initial values based on the instance
+        if instance and instance.pk and instance.room_id:
+            # Try to get the room with its building
             try:
-                current_room = Room.objects.get(pk=current_room_id)
-                self.initial['building'] = current_room.building_id
+                room = Room.objects.select_related('building').get(pk=instance.room_id)
+                # Set the building initial value
+                self.initial['building'] = room.building_id
+                # Set the room initial value
+                self.initial['room'] = room.pk
             except Room.DoesNotExist:
                 pass
-
-        # Get building ID from data or initial
+        elif instance and instance.pk:
+            # Instance exists but has no room - this shouldn't happen but handle it
+            self.initial['room'] = None
+        
+        # Get building ID for filtering
         building_id = None
         if self.data and 'building' in self.data and self.data['building']:
+            # Use POST/GET data if available
             try:
                 building_id = int(self.data['building'])
             except (ValueError, TypeError):
                 pass
         elif 'building' in self.initial:
+            # Otherwise use initial value
             building_id = self.initial.get('building')
-
-        # Build room queryset - SIMPLE and CORRECT approach
-        # Always get all rooms, but ensure current room is included
+        
+        # Build the room queryset
+        # CRITICAL: When editing, ALWAYS include the current room
+        current_room_id = None
+        if instance and instance.pk and instance.room_id:
+            current_room_id = instance.room_id
+        
         if building_id:
-            # Get rooms from selected building
-            room_qs = Room.objects.filter(building_id=building_id)
-            
-            # If editing, always include the current room
+            # Filter by building, but include current room if it exists
             if current_room_id:
                 room_qs = Room.objects.filter(
                     Q(building_id=building_id) | Q(pk=current_room_id)
-                )
+                ).distinct()
+            else:
+                room_qs = Room.objects.filter(building_id=building_id)
         else:
-            # No building selected, get all rooms
+            # No building selected - show all rooms
             room_qs = Room.objects.all()
-
+        
         # Apply ordering
         self.fields["room"].queryset = (
             room_qs
             .select_related("floor")
             .annotate(_num_int=Cast("number", IntegerField()))
             .order_by("floor__number", "_num_int", "number")
-            .distinct()
         )
 
         self.fields["room"].label_from_instance = format_room_option
+        
+        # DEBUG: Print the initial room value
+        # print(f"DEBUG: Initial room value: {self.initial.get('room')}")
+        # print(f"DEBUG: Current room ID: {current_room_id}")
+
+    def clean(self):
+        cleaned_data = super().clean()
+        return cleaned_data

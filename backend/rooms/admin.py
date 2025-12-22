@@ -1,4 +1,4 @@
-# admin.py - FIXED VERSION
+# admin.py - CLEAN FIXED VERSION
 import nested_admin
 from django import forms
 from django.contrib import admin
@@ -184,7 +184,7 @@ class GuestAdmin(admin.ModelAdmin):
     list_display = ["photo_thumb", "full_name", "phone_number", "email", "country", "city"]
 
 
-# ---------- Reservation (COMPLETELY FIXED) ----------
+# ---------- Reservation (FINAL FIX) ----------
 @admin.register(Reservation)
 class ReservationAdmin(admin.ModelAdmin):
     form = ReservationAdminForm
@@ -198,6 +198,6 @@ class ReservationAdmin(admin.ModelAdmin):
             idx = fields.index("room")
             fields.insert(idx, "building")
         return fields
-    
+
     class Media:
         js = ("admin/reservation_admin.js",)
