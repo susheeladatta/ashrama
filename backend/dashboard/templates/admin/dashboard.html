@@ -1,78 +1,100 @@
-<style>
-/* Heatmap colors */
-.hm-0 { background: #1f2937; }       /* dark gray */
-.hm-low { background: #14532d; }     /* green */
-.hm-mid { background: #78350f; }     /* amber */
-.hm-high { background: #7f1d1d; }    /* red */
+{% extends "admin/base_site.html" %}
 
-.hm-cell {
-    color: #fff;
-    font-weight: 600;
-    text-align: center;
-    border-radius: 4px;
-    padding: 4px 6px;
-}
-.hm-label {
-    font-size: 11px;
-    opacity: 0.8;
-}
-</style>
+{% block content %}
+<h1>Dashboard</h1>
 
-<table class="admin-dashboard-table">
-<thead>
-<tr>
-    <th>Building</th>
-    <th>Private</th>
-    <th>Female Dorm</th>
-    <th>Male Dorm</th>
-    <th>Repair</th>
-</tr>
-</thead>
+<p>Summary of rooms by building (click the numbers to open the filtered Rooms list).</p>
 
-<tbody>
-{% for row in items %}
-<tr>
-    <td>
-        <a href="{{ row.building_url }}">{{ row.building.name }}</a>
-    </td>
+<table class="listing" style="width:100%;">
+  <thead>
+    <tr>
+      <th>Building</th>
+      <th style="text-align:right;">Total</th>
 
-    <!-- PRIVATE -->
-    <td>
-        <div class="hm-cell {% if row.priv_occ == 0 %}hm-low{% elif row.priv_occ < 3 %}hm-mid{% else %}hm-high{% endif %}">
-            <span class="hm-label">Occ</span> {{ row.priv_occ }}
-        </div>
-        <div class="hm-cell {% if row.priv_avail == 0 %}hm-high{% else %}hm-low{% endif %}">
-            <span class="hm-label">Avail</span> {{ row.priv_avail }}
-        </div>
-    </td>
+      <th style="text-align:right;">Available (Private)</th>
+      <th style="text-align:right;">Occupied (Private)</th>
 
-    <!-- FEMALE -->
-    <td>
-        <div class="hm-cell {% if row.female_occ == 0 %}hm-low{% else %}hm-mid{% endif %}">
-            <span class="hm-label">Occ</span> {{ row.female_occ }}
-        </div>
-        <div class="hm-cell {% if row.female_avail == 0 %}hm-high{% else %}hm-low{% endif %}">
-            <span class="hm-label">Avail</span> {{ row.female_avail }}
-        </div>
-    </td>
+      <th style="text-align:right;">Available (Female dorm)</th>
+      <th style="text-align:right;">Occupied (Female dorm)</th>
 
-    <!-- MALE -->
-    <td>
-        <div class="hm-cell {% if row.male_occ == 0 %}hm-low{% else %}hm-mid{% endif %}">
-            <span class="hm-label">Occ</span> {{ row.male_occ }}
-        </div>
-        <div class="hm-cell {% if row.male_avail == 0 %}hm-high{% else %}hm-low{% endif %}">
-            <span class="hm-label">Avail</span> {{ row.male_avail }}
-        </div>
-    </td>
+      <th style="text-align:right;">Available (Male dorm)</th>
+      <th style="text-align:right;">Occupied (Male dorm)</th>
 
-    <!-- REPAIR -->
-    <td>
-        <div class="hm-cell {% if row.repair == 0 %}hm-low{% elif row.repair < 2 %}hm-mid{% else %}hm-high{% endif %}">
-            {{ row.repair }}
-        </div>
-    </td>
-</tr>
-{% endfor %}
-</tbody>
+      <th style="text-align:right;">Need repair</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    {% for row in items %}
+      <tr class="{% cycle 'row1' 'row2' %}">
+        <th scope="row">
+          <a href="{{ row.building_url }}">{{ row.building.name }}</a>
+        </th>
+
+        <td style="text-align:right;">
+          <a href="{{ row.total_url }}">{{ row.total }}</a>
+        </td>
+
+        <!-- PRIVATE -->
+        <td style="text-align:right;">
+          <a href="{{ row.priv_avail_url }}">
+            <span style="padding:2px 6px; border-radius:4px; background:#14532d; color:white;">
+              {{ row.priv_avail }}
+            </span>
+          </a>
+        </td>
+        <td style="text-align:right;">
+          <a href="{{ row.priv_occ_url }}">
+            <span style="padding:2px 6px; border-radius:4px; background:#7f1d1d; color:white;">
+              {{ row.priv_occ }}
+            </span>
+          </a>
+        </td>
+
+        <!-- FEMALE -->
+        <td style="text-align:right;">
+          <a href="{{ row.female_avail_url }}">
+            <span style="padding:2px 6px; border-radius:4px; background:#14532d; color:white;">
+              {{ row.female_avail }}
+            </span>
+          </a>
+        </td>
+        <td style="text-align:right;">
+          <a href="{{ row.female_occ_url }}">
+            <span style="padding:2px 6px; border-radius:4px; background:#7f1d1d; color:white;">
+              {{ row.female_occ }}
+            </span>
+          </a>
+        </td>
+
+        <!-- MALE -->
+        <td style="text-align:right;">
+          <a href="{{ row.male_avail_url }}">
+            <span style="padding:2px 6px; border-radius:4px; background:#14532d; color:white;">
+              {{ row.male_avail }}
+            </span>
+          </a>
+        </td>
+        <td style="text-align:right;">
+          <a href="{{ row.male_occ_url }}">
+            <span style="padding:2px 6px; border-radius:4px; background:#7f1d1d; color:white;">
+              {{ row.male_occ }}
+            </span>
+          </a>
+        </td>
+
+        <!-- REPAIR -->
+        <td style="text-align:right;">
+          <a href="{{ row.repair_url }}">
+            <span style="padding:2px 6px; border-radius:4px; background:#78350f; color:white;">
+              {{ row.repair }}
+            </span>
+          </a>
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="9">No buildings found.</td></tr>
+    {% endfor %}
+  </tbody>
 </table>
+{% endblock %}
