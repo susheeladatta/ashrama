@@ -234,35 +234,32 @@ class ReservationAdmin(admin.ModelAdmin):
     def row_actions(self, obj):
         buttons = []
 
-        # Check in
         if not obj.is_checked_in and not obj.is_cancelled:
-            buttons.append(self._btn("Check in", "checkin", obj.pk, "#2ecc71"))
+            buttons.append(
+                f'<a class="btn-checkin" href="{obj.pk}/checkin/">Check in</a>'
+            )
 
-        # Check out
         if obj.is_checked_in and not obj.is_checked_out and not obj.is_cancelled:
-            buttons.append(self._btn("Check out", "checkout", obj.pk, "#f39c12"))
+            buttons.append(
+                f'<a class="btn-checkout" href="{obj.pk}/checkout/">Check out</a>'
+            )
 
-        # Mark as paid
         if not obj.is_paid and not obj.is_cancelled:
-            buttons.append(self._btn("Paid", "paid", obj.pk, "#3498db"))
+            buttons.append(
+                f'<a class="btn-paid" href="{obj.pk}/paid/">Paid</a>'
+            )
 
-        # Cancel
         if not obj.is_cancelled:
-            buttons.append(self._btn("Cancel", "cancel", obj.pk, "#e74c3c"))
+            buttons.append(
+                f'<a class="btn-cancel" href="{obj.pk}/cancel/">Cancel</a>'
+            )
 
-        return format_html(" ".join(buttons))
+        return format_html(
+            '<div class="reservation-actions">{}</div>',
+            format_html("".join(buttons))
+        )
 
     row_actions.short_description = "Actions"
-
-    def _btn(self, label, action, pk, color):
-        return f"""
-            <a class="button"
-               style="background:{color};color:white;padding:4px 10px;
-                      border-radius:4px;text-decoration:none;font-size:12px;"
-               href="{pk}/{action}/">
-               {label}
-            </a>
-        """
 
     # ---------- URLs ----------
     def get_urls(self):
