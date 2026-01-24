@@ -191,7 +191,6 @@ class GuestAdmin(admin.ModelAdmin):
     list_display = ["photo_thumb", "full_name", "phone_number", "email", "country", "city"]
 
 
-# ---------- Reservation (FINAL FIX) ----------
 @admin.register(Reservation)
 class ReservationAdmin(admin.ModelAdmin):
     class Media:
@@ -206,7 +205,7 @@ class ReservationAdmin(admin.ModelAdmin):
         "is_checked_out",
         "is_cancelled",
         "is_paid",
-        "row_actions"
+        "row_actions",
     )
 
     list_filter = (
@@ -216,6 +215,7 @@ class ReservationAdmin(admin.ModelAdmin):
         "is_paid",
     )
 
+    # Keep your field ordering logic
     def get_fields(self, request, obj=None):
         fields = list(super().get_fields(request, obj))
         if "room" in fields:
@@ -227,31 +227,43 @@ class ReservationAdmin(admin.ModelAdmin):
             if "building" not in fields:
                 fields.append("building")
         return fields
-    
-    # ---------- Row action buttons ----------
-def row_actions(self, obj):
-    buttons = []
 
-    # Check in
-    if not obj.is_checked_in and not obj.is_cancelled:
-        buttons.append(self._btn("Check in", "checkin", obj.pk, "#2ecc71"))
+    # ---------- Button Helper ----------
+    def _btn(self, label, action, pk, color):
+        return f"""
+        <a href="{pk}/{action}/" style="
+            padding:4px 8px;
+            background:{color};
+            color:white;
+            border-radius:4px;
+            text-decoration:none;
+            margin-right:4px;
+            font-size:12px;">
+            {label}
+        </a>
+        """
 
-    # Check out
-    if obj.is_checked_in and not obj.is_checked_out and not obj.is_cancelled:
-        buttons.append(self._btn("Check out", "checkout", obj.pk, "#f39c12"))
+    # ---------- Row Action Buttons ----------
+    def row_actions(self, obj):
+        buttons = []
 
-    # Mark as paid
-    if not obj.is_paid and not obj.is_cancelled:
-        buttons.append(self._btn("Paid", "paid", obj.pk, "#3498db"))
+        if not obj.is_checked_in and not obj.is_cancelled:
+            buttons.append(self._btn("Check in", "checkin", obj.pk, "#2ecc71"))
 
-    # Cancel
-    if not obj.is_cancelled:
-        buttons.append(self._btn("Cancel", "cancel", obj.pk, "#e74c3c"))
+        if obj.is_checked_in and not obj.is_checked_out and not obj.is_cancelled:
+            buttons.append(self._btn("Check out", "checkout", obj.pk, "#f39c12"))
 
-    return format_html(" ".join(buttons))
+        if not obj.is_paid and not obj.is_cancelled:
+            buttons.append(self._btn("Paid", "paid", obj.pk, "#3498db"))
 
+        if not obj.is_cancelled:
+            buttons.append(self._btn("Cancel", "cancel", obj.pk, "#e74c3c"))
 
-    # ---------- URLs ----------
+        return format_html(" ".join(buttons))
+
+    row_actions.short_description = "Actions"
+
+    # ---------- Admin URLs ----------
     def get_urls(self):
         urls = super().get_urls()
         custom = [
