@@ -246,7 +246,7 @@ class ReservationAdmin(admin.ModelAdmin):
 
         if not obj.is_paid and not obj.is_cancelled:
             buttons.append(
-                f'<a class="btn-paid" href="{obj.pk}/paid/">Paid</a>'
+                f'<a class="btn-paid" href="{obj.pk}/paid/">Mark as Paid</a>'
             )
 
         if not obj.is_cancelled:
