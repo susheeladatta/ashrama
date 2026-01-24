@@ -195,6 +195,9 @@ class GuestAdmin(admin.ModelAdmin):
 class ReservationAdmin(admin.ModelAdmin):
     class Media:
         js = ("admin/reservation_admin.js",)
+        css = {
+            "all": ("admin/css/reservation_actions.css",)
+        }
 
     form = ReservationAdminForm
     filter_horizontal = ("guests",)

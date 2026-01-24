@@ -1,0 +1,44 @@
+/* Container */
+.reservation-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    justify-content: flex-start;
+    white-space: nowrap;
+}
+
+/* Base button style */
+.reservation-actions a {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.2;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+/* Individual actions */
+.reservation-actions .btn-checkin {
+    background: #22c55e;
+    color: white;
+}
+
+.reservation-actions .btn-checkout {
+    background: #f59e0b;
+    color: white;
+}
+
+.reservation-actions .btn-paid {
+    background: #3b82f6;
+    color: white;
+}
+
+.reservation-actions .btn-cancel {
+    background: #ef4444;
+    color: white;
+}
+
+/* Hover */
+.reservation-actions a:hover {
+    opacity: 0.9;
+}
