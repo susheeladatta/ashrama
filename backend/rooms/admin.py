@@ -1,17 +1,23 @@
+# admin.py - CLEAN FIXED VERSION
 import nested_admin
 from django import forms
 from django.contrib import admin
 from django.contrib.admin import SimpleListFilter
-from django.db.models import Max, Count, Q, Exists, OuterRef
-from django.utils import timezone
+from django.db.models import Max, Count
 
 from .models import Building, Floor, Room, Guest, Reservation
 from .forms import RoomAdminForm, ReservationAdminForm
-from .utils import format_room_option
+
+from django.db.models import (
+    Case, When, Value, BooleanField,
+    Exists, OuterRef
+)
+from django.utils import timezone
 
 
 # ---------- Inline forms ----------
 class EmptyFloorForm(forms.ModelForm):
+    """Render NO visible fields for Floor inside the Building page."""
     class Meta:
         model = Floor
         fields = []
@@ -40,6 +46,7 @@ class FloorInline(nested_admin.NestedStackedInline):
     form = EmptyFloorForm
     extra = 0
     inlines = [RoomInline]
+    classes = ("collapsible-floor",)
 
 
 @admin.register(Building)
@@ -54,7 +61,37 @@ class BuildingAdmin(nested_admin.NestedModelAdmin):
 
     @admin.display(ordering="_rooms_count", description="Rooms")
     def total_rooms(self, obj):
-        return obj._rooms_count
+        if hasattr(obj, "_rooms_count"):
+            return obj._rooms_count
+        return Room.objects.filter(building=obj).count()
+
+    class Media:
+        js = ("admin/collapsible_inlines.js",)
+        css = {"all": ("admin/collapsible_inlines.css",)}
+
+    def save_formset(self, request, form, formset, change):
+        instances = formset.save(commit=False)
+
+        for obj in instances:
+            if isinstance(obj, Floor):
+                if not obj.number:
+                    current_max = (
+                        Floor.objects.filter(building=form.instance)
+                        .aggregate(Max("number"))["number__max"]
+                        or 0
+                    )
+                    obj.number = current_max + 1
+                obj.building = form.instance
+                obj.save()
+
+            elif isinstance(obj, Room):
+                if obj.floor_id and (obj.building_id != obj.floor.building_id):
+                    obj.building_id = obj.floor.building_id
+                obj.save()
+
+        for obj in formset.deleted_objects:
+            obj.delete()
+        formset.save_m2m()
 
 
 class _HiddenModelAdmin(admin.ModelAdmin):
@@ -65,6 +102,38 @@ class _HiddenModelAdmin(admin.ModelAdmin):
 @admin.register(Floor)
 class FloorAdmin(_HiddenModelAdmin):
     pass
+
+
+class RealAvailabilityFilter(SimpleListFilter):
+    title = "Real-time availability"
+    parameter_name = "rt_available"
+
+    def lookups(self, request, model_admin):
+        return (("1", "Available"), ("0", "Unavailable"))
+
+    def queryset(self, request, queryset):
+        today = timezone.now().date()
+        occupied_now = Exists(
+            Reservation.objects.filter(
+                room=OuterRef("pk"),
+                is_cancelled=False,
+                is_checked_out=False,
+                check_in_date__lte=today,
+                check_out_date__gt=today,
+            )
+        )
+        is_available_now = Case(
+            When(occupied_now, then=Value(False)),
+            default=Value(True),
+            output_field=BooleanField(),
+        )
+        queryset = queryset.annotate(_is_available_now=is_available_now)
+
+        if self.value() == "1":
+            return queryset.filter(_is_available_now=True)
+        if self.value() == "0":
+            return queryset.filter(_is_available_now=False)
+        return queryset
 
 
 @admin.register(Room)
@@ -83,6 +152,7 @@ class RoomAdmin(admin.ModelAdmin):
         "donation_due",
         "needs_repair",
         "needs_supplies",
+        "contents_summary",
     ]
 
     list_filter = [
@@ -93,7 +163,15 @@ class RoomAdmin(admin.ModelAdmin):
         "has_kitchen",
         "needs_repair",
         "needs_supplies",
+        RealAvailabilityFilter,
+        "is_available",
     ]
+
+    class Media:
+        js = ("admin/room_admin.js",)
+
+    def contents_summary(self, obj):
+        return obj.get_contents_summary()
 
     def get_building_info(self, obj):
         b = obj.building.name if obj.building else ""
@@ -103,10 +181,10 @@ class RoomAdmin(admin.ModelAdmin):
 
 @admin.register(Guest)
 class GuestAdmin(admin.ModelAdmin):
-    list_display = ["full_name", "phone_number", "email"]
+    list_display = ["photo_thumb", "full_name", "phone_number", "email", "country", "city"]
 
 
-# ---------- Reservation (FINAL, CORRECT FIX) ----------
+# ---------- Reservation (FINAL FIX) ----------
 @admin.register(Reservation)
 class ReservationAdmin(admin.ModelAdmin):
     class Media:
@@ -121,6 +199,7 @@ class ReservationAdmin(admin.ModelAdmin):
         "is_checked_out",
         "is_cancelled",
         "is_paid",
+        "row_actions"
     )
 
     list_filter = (
@@ -130,40 +209,6 @@ class ReservationAdmin(admin.ModelAdmin):
         "is_paid",
     )
 
-    def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        """
-        CRITICAL FIX:
-        - Exclude rooms that are currently occupied
-        - Still allow the current room when editing
-        """
-        if db_field.name == "room":
-            today = timezone.now().date()
-
-            occupied_rooms = Reservation.objects.filter(
-                room=OuterRef("pk"),
-                is_cancelled=False,
-                is_checked_out=False,
-                check_in_date__lte=today,
-                check_out_date__gt=today,
-            )
-
-            qs = Room.objects.annotate(
-                is_occupied_now=Exists(occupied_rooms)
-            ).filter(is_occupied_now=False)
-
-            # Allow current room when editing
-            object_id = request.resolver_match.kwargs.get("object_id")
-            if object_id:
-                try:
-                    reservation = Reservation.objects.select_related("room").get(pk=object_id)
-                    qs = qs | Room.objects.filter(pk=reservation.room_id)
-                except Reservation.DoesNotExist:
-                    pass
-
-            kwargs["queryset"] = qs.distinct()
-
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
-
     def get_fields(self, request, obj=None):
         fields = list(super().get_fields(request, obj))
         if "room" in fields:
@@ -171,4 +216,74 @@ class ReservationAdmin(admin.ModelAdmin):
                 fields.remove("building")
             idx = fields.index("room")
             fields.insert(idx, "building")
+        else:
+            if "building" not in fields:
+                fields.append("building")
         return fields
+    
+    def row_actions(self, obj):
+        buttons = []
+
+        if not obj.is_checked_in and not obj.is_cancelled:
+            buttons.append(self._action_btn("Check-in", "checkin", obj.pk, "green"))
+
+        if obj.is_checked_in and not obj.is_checked_out:
+            buttons.append(self._action_btn("Check-out", "checkout", obj.pk, "orange"))
+
+        if not obj.is_cancelled:
+            buttons.append(self._action_btn("Cancel", "cancel", obj.pk, "red"))
+
+        if not obj.is_paid:
+            buttons.append(self._action_btn("Paid", "paid", obj.pk, "blue"))
+
+        return format_html(" ".join(buttons))
+
+    row_actions.short_description = "Actions"
+
+    def _action_btn(self, label, action, pk, color):
+        return format_html(
+            '<a class="button" style="background:{};color:white;padding:4px 8px;border-radius:4px;text-decoration:none" '
+            'href="{}">{}</a>',
+            color,
+            f"{pk}/{action}/",
+            label,
+        )
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path("<int:pk>/checkin/", self.admin_site.admin_view(self.checkin)),
+            path("<int:pk>/checkout/", self.admin_site.admin_view(self.checkout)),
+            path("<int:pk>/cancel/", self.admin_site.admin_view(self.cancel)),
+            path("<int:pk>/paid/", self.admin_site.admin_view(self.paid)),
+        ]
+        return custom + urls
+    
+    def checkin(self, request, pk):
+        obj = Reservation.objects.get(pk=pk)
+        obj.is_checked_in = True
+        obj.save(update_fields=["is_checked_in"])
+        messages.success(request, "Reservation checked in.")
+        return redirect(request.META.get("HTTP_REFERER"))
+
+    def checkout(self, request, pk):
+        obj = Reservation.objects.get(pk=pk)
+        obj.is_checked_out = True
+        obj.save(update_fields=["is_checked_out"])
+        messages.success(request, "Reservation checked out.")
+        return redirect(request.META.get("HTTP_REFERER"))
+
+    def cancel(self, request, pk):
+        obj = Reservation.objects.get(pk=pk)
+        obj.is_cancelled = True
+        obj.save(update_fields=["is_cancelled"])
+        messages.success(request, "Reservation cancelled.")
+        return redirect(request.META.get("HTTP_REFERER"))
+
+    def paid(self, request, pk):
+        obj = Reservation.objects.get(pk=pk)
+        obj.is_paid = True
+        obj.save(update_fields=["is_paid"])
+        messages.success(request, "Marked as paid.")
+        return redirect(request.META.get("HTTP_REFERER"))
+
