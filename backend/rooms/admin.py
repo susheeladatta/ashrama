@@ -1,9 +1,16 @@
 # admin.py - CLEAN FIXED VERSION
 import nested_admin
 from django import forms
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.admin import SimpleListFilter
-from django.db.models import Max, Count
+from django.db.models import Max, Count, Case, When, Value, BooleanField, Exists, OuterRef
+
+from django.urls import path
+from django.shortcuts import redirect
+from django.utils.html import format_html
+
+from .models import Building, Floor, Room, Guest, Reservation
+from .forms import RoomAdminForm, ReservationAdminForm
 
 from .models import Building, Floor, Room, Guest, Reservation
 from .forms import RoomAdminForm, ReservationAdminForm
@@ -221,34 +228,36 @@ class ReservationAdmin(admin.ModelAdmin):
                 fields.append("building")
         return fields
     
+    # ---------- Row action buttons ----------
     def row_actions(self, obj):
         buttons = []
 
         if not obj.is_checked_in and not obj.is_cancelled:
-            buttons.append(self._action_btn("Check-in", "checkin", obj.pk, "green"))
+            buttons.append(self._btn("Check in", "checkin", obj.pk, "#2ecc71"))
 
         if obj.is_checked_in and not obj.is_checked_out:
-            buttons.append(self._action_btn("Check-out", "checkout", obj.pk, "orange"))
+            buttons.append(self._btn("Check out", "checkout", obj.pk, "#f39c12"))
 
         if not obj.is_cancelled:
-            buttons.append(self._action_btn("Cancel", "cancel", obj.pk, "red"))
+            buttons.append(self._btn("Cancel", "cancel", obj.pk, "#e74c3c"))
 
         if not obj.is_paid:
-            buttons.append(self._action_btn("Paid", "paid", obj.pk, "blue"))
+            buttons.append(self._btn("Paid", "paid", obj.pk, "#3498db"))
 
         return format_html(" ".join(buttons))
 
     row_actions.short_description = "Actions"
 
-    def _action_btn(self, label, action, pk, color):
+    def _btn(self, label, action, pk, color):
         return format_html(
-            '<a class="button" style="background:{};color:white;padding:4px 8px;border-radius:4px;text-decoration:none" '
-            'href="{}">{}</a>',
+            '<a class="button" style="background:{};color:white;padding:4px 8px;'
+            'border-radius:4px;text-decoration:none" href="{}">{}</a>',
             color,
             f"{pk}/{action}/",
             label,
         )
 
+    # ---------- URLs ----------
     def get_urls(self):
         urls = super().get_urls()
         custom = [
@@ -258,7 +267,8 @@ class ReservationAdmin(admin.ModelAdmin):
             path("<int:pk>/paid/", self.admin_site.admin_view(self.paid)),
         ]
         return custom + urls
-    
+
+    # ---------- Actions ----------
     def checkin(self, request, pk):
         obj = Reservation.objects.get(pk=pk)
         obj.is_checked_in = True
@@ -286,4 +296,3 @@ class ReservationAdmin(admin.ModelAdmin):
         obj.save(update_fields=["is_paid"])
         messages.success(request, "Marked as paid.")
         return redirect(request.META.get("HTTP_REFERER"))
-
