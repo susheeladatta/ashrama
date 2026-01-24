@@ -215,7 +215,6 @@ class ReservationAdmin(admin.ModelAdmin):
         "is_paid",
     )
 
-    # Keep your field ordering logic
     def get_fields(self, request, obj=None):
         fields = list(super().get_fields(request, obj))
         if "room" in fields:
@@ -228,34 +227,23 @@ class ReservationAdmin(admin.ModelAdmin):
                 fields.append("building")
         return fields
 
-    # ---------- Button Helper ----------
-    def _btn(self, label, action, pk, color):
-        return f"""
-        <a href="{pk}/{action}/" style="
-            padding:4px 8px;
-            background:{color};
-            color:white;
-            border-radius:4px;
-            text-decoration:none;
-            margin-right:4px;
-            font-size:12px;">
-            {label}
-        </a>
-        """
-
-    # ---------- Row Action Buttons ----------
+    # ---------- Row action buttons ----------
     def row_actions(self, obj):
         buttons = []
 
+        # Check in
         if not obj.is_checked_in and not obj.is_cancelled:
             buttons.append(self._btn("Check in", "checkin", obj.pk, "#2ecc71"))
 
+        # Check out
         if obj.is_checked_in and not obj.is_checked_out and not obj.is_cancelled:
             buttons.append(self._btn("Check out", "checkout", obj.pk, "#f39c12"))
 
+        # Mark as paid
         if not obj.is_paid and not obj.is_cancelled:
             buttons.append(self._btn("Paid", "paid", obj.pk, "#3498db"))
 
+        # Cancel
         if not obj.is_cancelled:
             buttons.append(self._btn("Cancel", "cancel", obj.pk, "#e74c3c"))
 
@@ -263,7 +251,17 @@ class ReservationAdmin(admin.ModelAdmin):
 
     row_actions.short_description = "Actions"
 
-    # ---------- Admin URLs ----------
+    def _btn(self, label, action, pk, color):
+        return f"""
+            <a class="button"
+               style="background:{color};color:white;padding:4px 10px;
+                      border-radius:4px;text-decoration:none;font-size:12px;"
+               href="{pk}/{action}/">
+               {label}
+            </a>
+        """
+
+    # ---------- URLs ----------
     def get_urls(self):
         urls = super().get_urls()
         custom = [
