@@ -78,7 +78,7 @@ def rooms_for_building(request):
         )
         
         # When editing, exclude the current reservation from overlap check
-        if reservation_id:
+        if reservation_id and current_room_id:
             overlapping_reservation = Exists(
                 Reservation.objects.filter(
                     room=OuterRef("pk"),
@@ -107,7 +107,7 @@ def rooms_for_building(request):
         )
         
         # When editing, exclude the current reservation
-        if reservation_id:
+        if reservation_id and current_room_id:
             overlapping_reservation = Exists(
                 Reservation.objects.filter(
                     room=OuterRef("pk"),
@@ -149,17 +149,32 @@ def rooms_for_building(request):
         # Check if room is occupied
         is_occupied = getattr(room, 'has_overlapping_reservation', False)
         
-        # Get the base room info
+        # Get the base room info - call format_room_option with the room object
         html_text = str(format_room_option(room))
+        
+        # Debug: print the HTML text to see what format_room_option returns
+        # print(f"Room {room.id}: HTML text: {html_text}")
+        
+        # Convert to plain text
         plain_text = strip_tags(html_text).strip()
         
-        # If the room is occupied, replace "Available" with "Occupied"
-        # First, check if "Available" is in the text
-        if "Available" in plain_text and is_occupied:
-            plain_text = plain_text.replace("Available", "Occupied")
-        # Also check for the emoji variant if it exists
-        elif "🍀" in plain_text and is_occupied:
-            plain_text = plain_text.replace("🍀", "🍟")
+        # Check if the room should be marked as occupied
+        # Look for "Available" in the text (case-insensitive)
+        if is_occupied:
+            # Replace "Available" with "Occupied" regardless of case
+            plain_text_lower = plain_text.lower()
+            if "available" in plain_text_lower:
+                # Find the position and preserve original case for the rest of the text
+                index = plain_text_lower.find("available")
+                plain_text = plain_text[:index] + "Occupied" + plain_text[index + len("available"):]
+            
+            # Also replace the emoji if present
+            if "🍀" in plain_text:
+                plain_text = plain_text.replace("🍀", "🍟")
+            elif "💬" in plain_text:  # Check for other emoji variants
+                plain_text = plain_text.replace("💬", "🍟")
+            elif "💭" in plain_text:  # Check for other emoji variants
+                plain_text = plain_text.replace("💭", "🍟")
         
         results.append({
             "id": room.pk, 
