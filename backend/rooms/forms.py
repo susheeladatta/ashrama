@@ -1,7 +1,6 @@
 from django import forms
 from django.urls import reverse
 from django.core.exceptions import ValidationError
-from django.db.models import Q
 
 from .models import Room, Reservation, Building, Floor
 from .utils import format_room_option
@@ -76,7 +75,7 @@ class ReservationAdminForm(forms.ModelForm):
             rooms = rooms.filter(building_id=building_id)
 
         # ---------------------------------------------------
-        # SIMPLE OCCUPANCY CHECK (Python, not ORM magic)
+        # OCCUPANCY CHECK
         # ---------------------------------------------------
         occupied_ids = set()
 
@@ -98,13 +97,12 @@ class ReservationAdminForm(forms.ModelForm):
         def room_label(room):
             base = format_room_option(room)
             if room.id in occupied_ids:
-                # Replace any variant of "Available" with "Occupied" (case-insensitive)
+                # Replace "Available" with "Occupied" (case-insensitive)
                 import re
-                base = re.sub(r'Available', 'Occupied', base, flags=re.IGNORECASE)
-                # Replace various emoji with occupied emoji
+                base = re.sub(r'available', 'Occupied', base, flags=re.IGNORECASE)
+                # Replace emojis
                 base = base.replace("🍀", "🍟")
                 base = base.replace("💬", "🍟")
-                base = base.replace("💭", "🍟")
             return base
 
         self.fields["room"].label_from_instance = room_label

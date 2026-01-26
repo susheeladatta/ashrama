@@ -65,8 +65,6 @@ def rooms_for_building(request):
     # Check for overlapping reservations if dates are provided
     if check_in_date and check_out_date:
         # Check for reservations that overlap with the given date range
-        # Condition: reservation ends after check-in AND starts before check-out
-        # AND is not cancelled AND not checked out
         overlapping_reservation = Exists(
             Reservation.objects.filter(
                 room=OuterRef("pk"),
@@ -78,7 +76,7 @@ def rooms_for_building(request):
         )
         
         # When editing, exclude the current reservation from overlap check
-        if reservation_id and current_room_id:
+        if reservation_id:
             overlapping_reservation = Exists(
                 Reservation.objects.filter(
                     room=OuterRef("pk"),
@@ -107,7 +105,7 @@ def rooms_for_building(request):
         )
         
         # When editing, exclude the current reservation
-        if reservation_id and current_room_id:
+        if reservation_id:
             overlapping_reservation = Exists(
                 Reservation.objects.filter(
                     room=OuterRef("pk"),
@@ -121,7 +119,8 @@ def rooms_for_building(request):
         # Annotate with overlapping reservation info
         rooms = rooms.annotate(has_overlapping_reservation=overlapping_reservation)
     
-    # Filter for available rooms: not under repair, not needing cleaning
+    # CRITICAL CHANGE: Don't filter out occupied rooms - show ALL rooms so users can see which are occupied
+    # Filter only for basic room availability (not under repair, not needing cleaning)
     available_rooms = rooms.filter(
         is_available=True,
         needs_repair=False,
@@ -130,6 +129,7 @@ def rooms_for_building(request):
     
     # If editing, include the current room
     if current_room_id:
+        # Also include the current room even if it's under repair or needs cleaning
         current_room = rooms.filter(pk=current_room_id)
         qs = (available_rooms | current_room).distinct()
     else:
@@ -152,29 +152,19 @@ def rooms_for_building(request):
         # Get the base room info - call format_room_option with the room object
         html_text = str(format_room_option(room))
         
-        # Debug: print the HTML text to see what format_room_option returns
-        # print(f"Room {room.id}: HTML text: {html_text}")
-        
         # Convert to plain text
         plain_text = strip_tags(html_text).strip()
         
-        # Check if the room should be marked as occupied
-        # Look for "Available" in the text (case-insensitive)
+        # If the room is occupied, mark it as Occupied
         if is_occupied:
-            # Replace "Available" with "Occupied" regardless of case
-            plain_text_lower = plain_text.lower()
-            if "available" in plain_text_lower:
-                # Find the position and preserve original case for the rest of the text
-                index = plain_text_lower.find("available")
-                plain_text = plain_text[:index] + "Occupied" + plain_text[index + len("available"):]
+            # Replace any occurrence of "Available" (case-insensitive) with "Occupied"
+            import re
+            plain_text = re.sub(r'available', 'Occupied', plain_text, flags=re.IGNORECASE)
             
-            # Also replace the emoji if present
-            if "🍀" in plain_text:
-                plain_text = plain_text.replace("🍀", "🍟")
-            elif "💬" in plain_text:  # Check for other emoji variants
+            # Also replace emojis
+            plain_text = plain_text.replace("🍀", "🍟")
+            if "💬" in plain_text:  # Handle the emoji from your screenshot
                 plain_text = plain_text.replace("💬", "🍟")
-            elif "💭" in plain_text:  # Check for other emoji variants
-                plain_text = plain_text.replace("💭", "🍟")
         
         results.append({
             "id": room.pk, 
