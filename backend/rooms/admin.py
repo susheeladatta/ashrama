@@ -221,6 +221,20 @@ class ReservationAdmin(admin.ModelAdmin):
     # -------------------------------------------------
     # FORCE FIELD ORDER (form was overriding before)
     # -------------------------------------------------
+    def get_fields(self, request, obj=None):
+        fields = list(super().get_fields(request, obj))
+
+        if "room" in fields:
+            idx = fields.index("room")
+            for f in ["check_in_date", "check_out_date"]:
+                if f in fields:
+                    fields.remove(f)
+            fields.insert(idx, "check_in_date")
+            fields.insert(idx + 1, "check_out_date")
+
+        return fields
+
+
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
 
