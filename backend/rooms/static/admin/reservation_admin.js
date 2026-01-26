@@ -1,108 +1,73 @@
-// static/admin/reservation_admin.js
-(function($) {
-    $(document).ready(function() {
-        var roomSelect = $('#id_room');
-        var buildingSelect = $('#id_building');
-        var checkInDateInput = $('#id_check_in_date');
-        var checkOutDateInput = $('#id_check_out_date');
-        
-        // Function to update room options based on building selection and dates
-        function updateRoomOptions(buildingId) {
-            if (buildingId) {
-                var data = {
-                    'building': buildingId
-                };
-                
-                // Add check-in and check-out dates if available
-                var checkInDate = checkInDateInput.val();
-                var checkOutDate = checkOutDateInput.val();
-                
-                if (checkInDate && checkOutDate) {
-                    data.check_in_date = checkInDate;
-                    data.check_out_date = checkOutDate;
-                }
-                
-                // Check if we're editing an existing reservation
-                var path = window.location.pathname;
-                var match = path.match(/\/change\/(\d+)\//);
-                if (match) {
-                    data.reservation_id = match[1];
-                }
-                
-                $.ajax({
-                    url: buildingSelect.data('rooms-url'),
-                    data: data,
-                    success: function(data) {
-                        var currentValue = roomSelect.val();
-                        
-                        roomSelect.empty();
-                        
-                        // Add the empty option
-                        roomSelect.append(new Option('---------', ''));
-                        
-                        // Add all rooms (including occupied ones)
-                        $.each(data.results, function(index, item) {
-                            var option = new Option(item.text, item.id, false, false);
-                            roomSelect.append(option);
-                            
-                            // If room is occupied and not the current room, disable it
-                            if (item.occupied && String(item.id) !== String(currentValue)) {
-                                option.disabled = true;
-                            }
-                        });
-                        
-                        // Try to restore the current selection if it exists in the new options
-                        if (currentValue) {
-                            roomSelect.val(currentValue);
-                        }
-                        
-                        roomSelect.trigger('change');
-                    }
-                });
-            } else {
-                // Clear room options if no building selected
-                roomSelect.empty();
-                roomSelect.append(new Option('---------', ''));
-                roomSelect.trigger('change');
-            }
-        }
+(function () {
+  function refreshRooms() {
+    const buildingSelect = document.getElementById("id_building");
+    const roomSelect = document.getElementById("id_room");
+    const checkIn = document.getElementById("id_check_in_date");
+    const checkOut = document.getElementById("id_check_out_date");
 
-        // When building selection changes
-        buildingSelect.change(function() {
-            var buildingId = $(this).val();
-            updateRoomOptions(buildingId);
-        });
-        
-        // When check-in or check-out dates change, update room options if building is selected
-        checkInDateInput.change(function() {
-            var buildingId = buildingSelect.val();
-            if (buildingId) {
-                updateRoomOptions(buildingId);
-            }
-        });
-        
-        checkOutDateInput.change(function() {
-            var buildingId = buildingSelect.val();
-            if (buildingId) {
-                updateRoomOptions(buildingId);
-            }
-        });
+    if (!buildingSelect || !roomSelect) return;
 
-        // Initialize on page load if building is already selected
-        var initialBuildingId = buildingSelect.val();
-        if (initialBuildingId) {
-            updateRoomOptions(initialBuildingId);
-        }
-        
-        // Also trigger update when page loads if dates are already filled
-        setTimeout(function() {
-            var initialBuildingId = buildingSelect.val();
-            var checkInDate = checkInDateInput.val();
-            var checkOutDate = checkOutDateInput.val();
-            
-            if (initialBuildingId && checkInDate && checkOutDate) {
-                updateRoomOptions(initialBuildingId);
-            }
-        }, 100);
-    });
-})(django.jQuery);
+    const building = buildingSelect.value;
+    if (!building) return;
+
+    const roomsUrl =
+      buildingSelect.dataset.roomsUrl ||
+      buildingSelect.getAttribute("data-rooms-url");
+
+    if (!roomsUrl) return;
+
+    const params = new URLSearchParams();
+    params.append("building", building);
+
+    if (checkIn && checkIn.value) {
+      params.append("check_in_date", checkIn.value);
+    }
+
+    if (checkOut && checkOut.value) {
+      params.append("check_out_date", checkOut.value);
+    }
+
+    // reservation id when editing
+    const pathParts = window.location.pathname.split("/");
+    const maybeId = pathParts[pathParts.length - 3];
+    if (maybeId && !isNaN(maybeId)) {
+      params.append("reservation_id", maybeId);
+    }
+
+    fetch(`${roomsUrl}?${params.toString()}`)
+      .then((r) => r.json())
+      .then((data) => {
+        roomSelect.innerHTML = "";
+
+        const empty = document.createElement("option");
+        empty.value = "";
+        empty.textContent = "---------";
+        roomSelect.appendChild(empty);
+
+        data.results.forEach((room) => {
+          const opt = document.createElement("option");
+          opt.value = room.id;
+          opt.textContent = room.text;
+
+          if (room.occupied) {
+            opt.style.color = "#ff6666";
+          }
+
+          roomSelect.appendChild(opt);
+        });
+      });
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    const building = document.getElementById("id_building");
+    const checkIn = document.getElementById("id_check_in_date");
+    const checkOut = document.getElementById("id_check_out_date");
+
+    if (building) building.addEventListener("change", refreshRooms);
+    if (checkIn) checkIn.addEventListener("change", refreshRooms);
+    if (checkOut) checkOut.addEventListener("change", refreshRooms);
+
+    // initial load (important when editing)
+    setTimeout(refreshRooms, 300);
+  });
+})();
