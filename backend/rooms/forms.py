@@ -1,8 +1,8 @@
-# rooms/forms.py - FINAL WORKING VERSION
 from django import forms
 from django.urls import reverse
 from django.db.models.functions import Cast
-from django.db.models import IntegerField, Q
+from django.db.models import IntegerField, Q, Exists, OuterRef
+from django.core.exceptions import ValidationError
 
 from .models import Room, Reservation, Building, Floor
 from .utils import format_room_option
@@ -38,7 +38,7 @@ class RoomAdminForm(forms.ModelForm):
 
 
 # ---------------------------------------------------------
-# RESERVATION ADMIN FORM - ULTIMATE FIX
+# RESERVATION ADMIN FORM
 # ---------------------------------------------------------
 class ReservationAdminForm(forms.ModelForm):
     building = forms.ModelChoiceField(
@@ -61,44 +61,31 @@ class ReservationAdminForm(forms.ModelForm):
         except Exception:
             pass
 
-        # Get the current reservation instance
         instance = self.instance
-        
-        # Set initial values based on the instance
+
+        # ---------------------------
+        # Preserve existing initial logic
+        # ---------------------------
         if instance and instance.pk and instance.room_id:
-            # Try to get the room with its building
             try:
-                room = Room.objects.select_related('building').get(pk=instance.room_id)
-                # Set the building initial value
-                self.initial['building'] = room.building_id
-                # Set the room initial value
-                self.initial['room'] = room.pk
+                room = Room.objects.select_related("building").get(pk=instance.room_id)
+                self.initial["building"] = room.building_id
+                self.initial["room"] = room.pk
             except Room.DoesNotExist:
                 pass
-        elif instance and instance.pk:
-            # Instance exists but has no room - this shouldn't happen but handle it
-            self.initial['room'] = None
-        
-        # Get building ID for filtering
+
         building_id = None
-        if self.data and 'building' in self.data and self.data['building']:
-            # Use POST/GET data if available
+        if self.data and self.data.get("building"):
             try:
-                building_id = int(self.data['building'])
-            except (ValueError, TypeError):
+                building_id = int(self.data["building"])
+            except Exception:
                 pass
-        elif 'building' in self.initial:
-            # Otherwise use initial value
-            building_id = self.initial.get('building')
-        
-        # Build the room queryset
-        # CRITICAL: When editing, ALWAYS include the current room
-        current_room_id = None
-        if instance and instance.pk and instance.room_id:
-            current_room_id = instance.room_id
-        
+        elif "building" in self.initial:
+            building_id = self.initial.get("building")
+
+        current_room_id = instance.room_id if instance and instance.pk else None
+
         if building_id:
-            # Filter by building, but include current room if it exists
             if current_room_id:
                 room_qs = Room.objects.filter(
                     Q(building_id=building_id) | Q(pk=current_room_id)
@@ -106,10 +93,34 @@ class ReservationAdminForm(forms.ModelForm):
             else:
                 room_qs = Room.objects.filter(building_id=building_id)
         else:
-            # No building selected - show all rooms
             room_qs = Room.objects.all()
-        
-        # Apply ordering
+
+        # -------------------------------------------------
+        # NEW: date-aware occupancy annotation
+        # -------------------------------------------------
+        check_in = self.data.get("check_in_date") or getattr(instance, "check_in_date", None)
+        check_out = self.data.get("check_out_date") or getattr(instance, "check_out_date", None)
+
+        if check_in and check_out:
+            overlapping = Reservation.objects.filter(
+                room=OuterRef("pk"),
+                is_cancelled=False,
+                check_in_date__lt=check_out,
+                check_out_date__gt=check_in,
+            )
+
+            # Exclude self when editing
+            if instance and instance.pk:
+                overlapping = overlapping.exclude(pk=instance.pk)
+
+            room_qs = room_qs.annotate(
+                _is_occupied=Exists(overlapping)
+            )
+        else:
+            room_qs = room_qs.annotate(
+                _is_occupied=forms.models.Value(False, output_field=forms.models.BooleanField())
+            )
+
         self.fields["room"].queryset = (
             room_qs
             .select_related("floor")
@@ -117,12 +128,47 @@ class ReservationAdminForm(forms.ModelForm):
             .order_by("floor__number", "_num_int", "number")
         )
 
-        self.fields["room"].label_from_instance = format_room_option
-        
-        # DEBUG: Print the initial room value
-        # print(f"DEBUG: Initial room value: {self.initial.get('room')}")
-        # print(f"DEBUG: Current room ID: {current_room_id}")
+        # -------------------------------------------------
+        # NEW: show real status in dropdown
+        # -------------------------------------------------
+        def room_label(room):
+            base = format_room_option(room)
+            if getattr(room, "_is_occupied", False):
+                return base.replace("Available", "Occupied")
+            return base
 
+        self.fields["room"].label_from_instance = room_label
+
+    # -------------------------------------------------
+    # NEW: hard validation on save (overlap protection)
+    # -------------------------------------------------
     def clean(self):
-        cleaned_data = super().clean()
-        return cleaned_data
+        cleaned = super().clean()
+
+        room = cleaned.get("room")
+        check_in = cleaned.get("check_in_date")
+        check_out = cleaned.get("check_out_date")
+
+        if not room or not check_in or not check_out:
+            return cleaned
+
+        qs = Reservation.objects.filter(
+            room=room,
+            is_cancelled=False,
+            check_in_date__lt=check_out,
+            check_out_date__gt=check_in,
+        )
+
+        if self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+
+        conflict = qs.select_related("room").first()
+
+        if conflict:
+            guests = ", ".join(g.full_name for g in conflict.guests.all())
+            raise ValidationError(
+                f"Room overlaps with existing reservation: {guests} "
+                f"({conflict.check_in_date} → {conflict.check_out_date})"
+            )
+
+        return cleaned
