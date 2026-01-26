@@ -1,9 +1,9 @@
 # rooms/views.py
-from datetime import date
+from datetime import date, datetime
 
 from django.http import JsonResponse, HttpResponseBadRequest
 from django.db.models.functions import Cast
-from django.db.models import IntegerField, Exists, OuterRef
+from django.db.models import IntegerField, Exists, OuterRef, Q
 from django.utils.html import strip_tags
 from django.views.decorators.http import require_GET
 
@@ -20,6 +20,8 @@ def rooms_for_building(request):
     """
     building_id = request.GET.get("building")
     reservation_id = request.GET.get("reservation_id")
+    check_in_date_str = request.GET.get("check_in_date")
+    check_out_date_str = request.GET.get("check_out_date")
     
     if not building_id:
         return JsonResponse({"results": []})
@@ -30,26 +32,28 @@ def rooms_for_building(request):
     except Building.DoesNotExist:
         return HttpResponseBadRequest("Invalid building")
 
-    # Get today's date
-    today = date.today()
+    # Parse check-in and check-out dates
+    check_in_date = None
+    check_out_date = None
     
-    # Check for active reservations (not cancelled, spanning today)
-    active_reservation = Exists(
-        Reservation.objects.filter(
-            room=OuterRef("pk"),
-            is_cancelled=False,
-            check_in_date__lte=today,
-            check_out_date__gt=today,
-        )
-    )
+    if check_in_date_str:
+        try:
+            check_in_date = datetime.strptime(check_in_date_str, "%Y-%m-%d").date()
+        except ValueError:
+            # If invalid date format, ignore and fall back
+            pass
     
+    if check_out_date_str:
+        try:
+            check_out_date = datetime.strptime(check_out_date_str, "%Y-%m-%d").date()
+        except ValueError:
+            # If invalid date format, ignore and fall back
+            pass
+
     # Get rooms in this building
     rooms = Room.objects.filter(building_id=building_id)
     
-    # Annotate with active reservation info
-    rooms = rooms.annotate(has_active_reservation=active_reservation)
-    
-    # For editing existing reservation, include the current room even if occupied
+    # For editing existing reservation, get the current room
     current_room_id = None
     if reservation_id:
         try:
@@ -58,15 +62,78 @@ def rooms_for_building(request):
         except Reservation.DoesNotExist:
             pass
     
-    # Filter for available rooms: not under repair, not needing cleaning, not occupied
-    available_rooms = rooms.filter(
-        is_available=True,
-        needs_repair=False,
-        needs_cleaning=False,
-        has_active_reservation=False
-    )
+    # Check for overlapping reservations if dates are provided
+    if check_in_date and check_out_date:
+        # Check for reservations that overlap with the given date range
+        # Condition: reservation ends after check-in AND starts before check-out
+        # AND is not cancelled
+        overlapping_reservation = Exists(
+            Reservation.objects.filter(
+                room=OuterRef("pk"),
+                is_cancelled=False,
+                check_out_date__gt=check_in_date,
+                check_in_date__lt=check_out_date,
+            )
+        )
+        
+        # When editing, exclude the current reservation from overlap check
+        if reservation_id:
+            overlapping_reservation = Exists(
+                Reservation.objects.filter(
+                    room=OuterRef("pk"),
+                    is_cancelled=False,
+                    check_out_date__gt=check_in_date,
+                    check_in_date__lt=check_out_date,
+                ).exclude(pk=reservation_id)
+            )
+        
+        # Annotate with overlapping reservation info
+        rooms = rooms.annotate(has_overlapping_reservation=overlapping_reservation)
+        
+        # Filter for available rooms: not under repair, not needing cleaning, not overlapping with reservations
+        available_rooms = rooms.filter(
+            is_available=True,
+            needs_repair=False,
+            needs_cleaning=False,
+            has_overlapping_reservation=False
+        )
+    else:
+        # If no dates provided, fall back to checking active reservations for today
+        today = date.today()
+        
+        # Check for active reservations (not cancelled, spanning today)
+        active_reservation = Exists(
+            Reservation.objects.filter(
+                room=OuterRef("pk"),
+                is_cancelled=False,
+                check_in_date__lte=today,
+                check_out_date__gt=today,
+            )
+        )
+        
+        # When editing, exclude the current reservation
+        if reservation_id:
+            active_reservation = Exists(
+                Reservation.objects.filter(
+                    room=OuterRef("pk"),
+                    is_cancelled=False,
+                    check_in_date__lte=today,
+                    check_out_date__gt=today,
+                ).exclude(pk=reservation_id)
+            )
+        
+        # Annotate with active reservation info
+        rooms = rooms.annotate(has_overlapping_reservation=active_reservation)
+        
+        # Filter for available rooms: not under repair, not needing cleaning, not occupied
+        available_rooms = rooms.filter(
+            is_available=True,
+            needs_repair=False,
+            needs_cleaning=False,
+            has_overlapping_reservation=False
+        )
     
-    # If editing, include the current room
+    # If editing, include the current room even if it would normally be filtered out
     if current_room_id:
         current_room = rooms.filter(pk=current_room_id)
         qs = (available_rooms | current_room).distinct()
