@@ -1,7 +1,7 @@
 from django import forms
 from django.urls import reverse
 from django.db.models.functions import Cast
-from django.db.models import IntegerField, Q, Exists, OuterRef
+from django.db.models import IntegerField, Q, Exists, OuterRef, Value, BooleanField
 from django.core.exceptions import ValidationError
 
 from .models import Room, Reservation, Building, Floor
@@ -96,7 +96,7 @@ class ReservationAdminForm(forms.ModelForm):
             room_qs = Room.objects.all()
 
         # -------------------------------------------------
-        # NEW: date-aware occupancy annotation
+        # Date-aware occupancy annotation
         # -------------------------------------------------
         check_in = self.data.get("check_in_date") or getattr(instance, "check_in_date", None)
         check_out = self.data.get("check_out_date") or getattr(instance, "check_out_date", None)
@@ -117,8 +117,9 @@ class ReservationAdminForm(forms.ModelForm):
                 _is_occupied=Exists(overlapping)
             )
         else:
+            # ✅ FIXED: use django.db.models.Value / BooleanField (not forms.models)
             room_qs = room_qs.annotate(
-                _is_occupied=forms.models.Value(False, output_field=forms.models.BooleanField())
+                _is_occupied=Value(False, output_field=BooleanField())
             )
 
         self.fields["room"].queryset = (
@@ -129,7 +130,7 @@ class ReservationAdminForm(forms.ModelForm):
         )
 
         # -------------------------------------------------
-        # NEW: show real status in dropdown
+        # Show real status in dropdown
         # -------------------------------------------------
         def room_label(room):
             base = format_room_option(room)
@@ -140,7 +141,7 @@ class ReservationAdminForm(forms.ModelForm):
         self.fields["room"].label_from_instance = room_label
 
     # -------------------------------------------------
-    # NEW: hard validation on save (overlap protection)
+    # Hard validation on save (overlap protection)
     # -------------------------------------------------
     def clean(self):
         cleaned = super().clean()
