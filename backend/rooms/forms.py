@@ -55,7 +55,6 @@ class ReservationAdminForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # Attach AJAX URL
         try:
             self.fields["building"].widget.attrs["data-rooms-url"] = reverse("rooms_for_building")
         except Exception:
@@ -63,9 +62,6 @@ class ReservationAdminForm(forms.ModelForm):
 
         instance = self.instance
 
-        # ---------------------------
-        # Preserve existing initial logic
-        # ---------------------------
         if instance and instance.pk and instance.room_id:
             try:
                 room = Room.objects.select_related("building").get(pk=instance.room_id)
@@ -96,7 +92,7 @@ class ReservationAdminForm(forms.ModelForm):
             room_qs = Room.objects.all()
 
         # -------------------------------------------------
-        # Date-aware occupancy annotation
+        # Date-aware occupancy (FIXED)
         # -------------------------------------------------
         check_in = self.data.get("check_in_date") or getattr(instance, "check_in_date", None)
         check_out = self.data.get("check_out_date") or getattr(instance, "check_out_date", None)
@@ -105,11 +101,11 @@ class ReservationAdminForm(forms.ModelForm):
             overlapping = Reservation.objects.filter(
                 room=OuterRef("pk"),
                 is_cancelled=False,
+                is_checked_out=False,   # ✅ THIS WAS MISSING
                 check_in_date__lt=check_out,
                 check_out_date__gt=check_in,
             )
 
-            # Exclude self when editing
             if instance and instance.pk:
                 overlapping = overlapping.exclude(pk=instance.pk)
 
@@ -117,7 +113,6 @@ class ReservationAdminForm(forms.ModelForm):
                 _is_occupied=Exists(overlapping)
             )
         else:
-            # ✅ FIXED: use django.db.models.Value / BooleanField (not forms.models)
             room_qs = room_qs.annotate(
                 _is_occupied=Value(False, output_field=BooleanField())
             )
@@ -129,9 +124,6 @@ class ReservationAdminForm(forms.ModelForm):
             .order_by("floor__number", "_num_int", "number")
         )
 
-        # -------------------------------------------------
-        # Show real status in dropdown
-        # -------------------------------------------------
         def room_label(room):
             base = format_room_option(room)
             if getattr(room, "_is_occupied", False):
@@ -141,7 +133,7 @@ class ReservationAdminForm(forms.ModelForm):
         self.fields["room"].label_from_instance = room_label
 
     # -------------------------------------------------
-    # Hard validation on save (overlap protection)
+    # HARD SAVE VALIDATION (FIXED)
     # -------------------------------------------------
     def clean(self):
         cleaned = super().clean()
@@ -156,6 +148,7 @@ class ReservationAdminForm(forms.ModelForm):
         qs = Reservation.objects.filter(
             room=room,
             is_cancelled=False,
+            is_checked_out=False,   # ✅ ALSO REQUIRED HERE
             check_in_date__lt=check_out,
             check_out_date__gt=check_in,
         )
@@ -163,7 +156,7 @@ class ReservationAdminForm(forms.ModelForm):
         if self.instance.pk:
             qs = qs.exclude(pk=self.instance.pk)
 
-        conflict = qs.select_related("room").first()
+        conflict = qs.first()
 
         if conflict:
             guests = ", ".join(g.full_name for g in conflict.guests.all())
