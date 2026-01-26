@@ -3,24 +3,13 @@
     $(document).ready(function() {
         var roomSelect = $('#id_room');
         var buildingSelect = $('#id_building');
-        var checkInDateInput = $('#id_check_in_date');
-        var checkOutDateInput = $('#id_check_out_date');
         
-        // Function to update room options based on building selection and dates
+        // Function to update room options based on building selection
         function updateRoomOptions(buildingId) {
             if (buildingId) {
                 var data = {
                     'building': buildingId
                 };
-                
-                // Add check-in and check-out dates if available
-                var checkInDate = checkInDateInput.val();
-                var checkOutDate = checkOutDateInput.val();
-                
-                if (checkInDate && checkOutDate) {
-                    data.check_in_date = checkInDate;
-                    data.check_out_date = checkOutDate;
-                }
                 
                 // Check if we're editing an existing reservation
                 var path = window.location.pathname;
@@ -52,12 +41,6 @@
                         }
                         
                         roomSelect.trigger('change');
-                    },
-                    error: function(xhr, status, error) {
-                        // Show error message if dates are invalid
-                        if (xhr.status === 400) {
-                            alert('Error: ' + xhr.responseText);
-                        }
                     }
                 });
             } else {
@@ -72,21 +55,6 @@
         buildingSelect.change(function() {
             var buildingId = $(this).val();
             updateRoomOptions(buildingId);
-        });
-        
-        // When check-in or check-out dates change, update room options if building is already selected
-        checkInDateInput.change(function() {
-            var buildingId = buildingSelect.val();
-            if (buildingId) {
-                updateRoomOptions(buildingId);
-            }
-        });
-        
-        checkOutDateInput.change(function() {
-            var buildingId = buildingSelect.val();
-            if (buildingId) {
-                updateRoomOptions(buildingId);
-            }
         });
 
         // Initialize on page load if building is already selected

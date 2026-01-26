@@ -1,8 +1,7 @@
-# rooms/forms.py
 from django import forms
 from django.urls import reverse
 from django.core.exceptions import ValidationError
-from django.utils import timezone
+from django.db.models import Q
 
 from .models import Room, Reservation, Building, Floor
 from .utils import format_room_option
@@ -37,7 +36,7 @@ class RoomAdminForm(forms.ModelForm):
 
 
 # ---------------------------------------------------------
-# RESERVATION ADMIN FORM - FIXED
+# RESERVATION ADMIN FORM
 # ---------------------------------------------------------
 class ReservationAdminForm(forms.ModelForm):
     building = forms.ModelChoiceField(
@@ -67,14 +66,46 @@ class ReservationAdminForm(forms.ModelForm):
             except Exception:
                 pass
 
-        # Set initial room queryset to empty - will be populated by JavaScript
-        self.fields["room"].queryset = Room.objects.none()
+        building_id = self.data.get("building") or self.initial.get("building")
+        check_in = self.data.get("check_in_date") or self.initial.get("check_in_date")
+        check_out = self.data.get("check_out_date") or self.initial.get("check_out_date")
 
-        # Set up JavaScript for dynamic room filtering
-        self.fields["building"].widget.attrs["class"] = "building-select"
-        self.fields["check_in_date"].widget.attrs["class"] = "date-select"
-        self.fields["check_out_date"].widget.attrs["class"] = "date-select"
+        rooms = Room.objects.all()
 
+        if building_id:
+            rooms = rooms.filter(building_id=building_id)
+
+        # ---------------------------------------------------
+        # SIMPLE OCCUPANCY CHECK (Python, not ORM magic)
+        # ---------------------------------------------------
+        occupied_ids = set()
+
+        if check_in and check_out:
+            conflicts = Reservation.objects.filter(
+                is_cancelled=False,
+                is_checked_out=False,
+                check_in_date__lt=check_out,
+                check_out_date__gt=check_in,
+            )
+
+            if instance.pk:
+                conflicts = conflicts.exclude(pk=instance.pk)
+
+            occupied_ids = set(conflicts.values_list("room_id", flat=True))
+
+        self.fields["room"].queryset = rooms
+
+        def room_label(room):
+            base = format_room_option(room)
+            if room.id in occupied_ids:
+                return base.replace("Available", "Occupied")
+            return base
+
+        self.fields["room"].label_from_instance = room_label
+
+    # ---------------------------------------------------
+    # HARD BLOCK ON SAVE
+    # ---------------------------------------------------
     def clean(self):
         cleaned = super().clean()
 
@@ -85,11 +116,10 @@ class ReservationAdminForm(forms.ModelForm):
         if not room or not check_in or not check_out:
             return cleaned
 
-        # Check for overlapping reservations
         conflicts = Reservation.objects.filter(
             room=room,
             is_cancelled=False,
-            is_checked_in=True,  # Only consider checked-in reservations
+            is_checked_out=False,
             check_in_date__lt=check_out,
             check_out_date__gt=check_in,
         )
