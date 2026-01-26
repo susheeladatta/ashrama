@@ -218,38 +218,39 @@ class ReservationAdmin(admin.ModelAdmin):
         "is_paid",
     )
 
+    # -------------------------------------------------
+    # FORCE FIELD ORDER (form was overriding before)
+    # -------------------------------------------------
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
 
+        fields = list(form.base_fields.keys())
 
-
-    def get_fields(self, request, obj=None):
-        fields = list(super().get_fields(request, obj))
-
-        # Ensure date fields come BEFORE building/room
-        for fname in ("check_in_date", "check_out_date"):
-            if fname in fields:
-                fields.remove(fname)
-
-        insert_at = 0
-        if "guests" in fields:
-            insert_at = fields.index("guests") + 1
+        # Remove dates if present
+        for f in ("check_in_date", "check_out_date"):
+            if f in fields:
+                fields.remove(f)
 
         # Insert dates right after guests
-        fields.insert(insert_at, "check_in_date")
-        fields.insert(insert_at + 1, "check_out_date")
+        if "guests" in fields:
+            idx = fields.index("guests") + 1
+        else:
+            idx = 0
 
-        # Existing logic: building before room
+        fields.insert(idx, "check_in_date")
+        fields.insert(idx + 1, "check_out_date")
+
+        # Ensure building comes before room
         if "room" in fields:
             if "building" in fields:
                 fields.remove("building")
-            idx = fields.index("room")
-            fields.insert(idx, "building")
-        else:
-            if "building" not in fields:
-                fields.append("building")
+            room_idx = fields.index("room")
+            fields.insert(room_idx, "building")
 
-        return fields
+        # Apply reordered fields back to form
+        form.base_fields = {k: form.base_fields[k] for k in fields}
 
-
+        return form
 
     # ---------- Row action buttons ----------
     def row_actions(self, obj):
