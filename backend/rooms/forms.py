@@ -98,7 +98,9 @@ class ReservationAdminForm(forms.ModelForm):
         def room_label(room):
             base = format_room_option(room)
             if room.id in occupied_ids:
-                return base.replace("Available", "Occupied")
+                # Replace "Available" with "Occupied" and emoji if present
+                base = base.replace("Available", "Occupied")
+                base = base.replace("🍀", "🍟")
             return base
 
         self.fields["room"].label_from_instance = room_label

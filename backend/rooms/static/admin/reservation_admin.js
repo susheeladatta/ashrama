@@ -46,7 +46,7 @@
                             roomSelect.append(option);
                             
                             // If room is occupied, disable the option (but still show it)
-                            if (item.text.includes('Occupied') && item.id != currentValue) {
+                            if (item.occupied && item.id != currentValue) {
                                 option.disabled = true;
                             }
                         });
@@ -93,5 +93,17 @@
         if (initialBuildingId) {
             updateRoomOptions(initialBuildingId);
         }
+        
+        // Also trigger update when page loads if dates are already filled
+        // This handles the case when page is reloaded or validation fails
+        setTimeout(function() {
+            var initialBuildingId = buildingSelect.val();
+            var checkInDate = checkInDateInput.val();
+            var checkOutDate = checkOutDateInput.val();
+            
+            if (initialBuildingId && checkInDate && checkOutDate) {
+                updateRoomOptions(initialBuildingId);
+            }
+        }, 100);
     });
 })(django.jQuery);

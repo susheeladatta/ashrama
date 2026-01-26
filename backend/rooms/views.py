@@ -53,6 +53,15 @@ def rooms_for_building(request):
     # Get rooms in this building
     rooms = Room.objects.filter(building_id=building_id)
     
+    # For editing existing reservation, get the current room
+    current_room_id = None
+    if reservation_id:
+        try:
+            reservation = Reservation.objects.get(pk=reservation_id)
+            current_room_id = reservation.room_id
+        except Reservation.DoesNotExist:
+            pass
+    
     # Check for overlapping reservations if dates are provided
     if check_in_date and check_out_date:
         # Check for reservations that overlap with the given date range
@@ -82,17 +91,12 @@ def rooms_for_building(request):
         
         # Annotate with overlapping reservation info
         rooms = rooms.annotate(has_overlapping_reservation=overlapping_reservation)
-        
-        # Get all rooms to show in dropdown (including occupied ones)
-        # We'll mark them as occupied in the label
-        qs = rooms
-        
     else:
         # If no dates provided, fall back to checking active reservations for today
         today = date.today()
         
         # Check for active reservations (not cancelled, not checked out, spanning today)
-        active_reservation = Exists(
+        overlapping_reservation = Exists(
             Reservation.objects.filter(
                 room=OuterRef("pk"),
                 is_cancelled=False,
@@ -104,7 +108,7 @@ def rooms_for_building(request):
         
         # When editing, exclude the current reservation
         if reservation_id:
-            active_reservation = Exists(
+            overlapping_reservation = Exists(
                 Reservation.objects.filter(
                     room=OuterRef("pk"),
                     is_cancelled=False,
@@ -114,21 +118,11 @@ def rooms_for_building(request):
                 ).exclude(pk=reservation_id)
             )
         
-        # Annotate with active reservation info
-        rooms = rooms.annotate(has_overlapping_reservation=active_reservation)
-        qs = rooms
-    
-    # For editing existing reservation, always include the current room
-    current_room_id = None
-    if reservation_id:
-        try:
-            reservation = Reservation.objects.get(pk=reservation_id)
-            current_room_id = reservation.room_id
-        except Reservation.DoesNotExist:
-            pass
+        # Annotate with overlapping reservation info
+        rooms = rooms.annotate(has_overlapping_reservation=overlapping_reservation)
     
     # Filter for available rooms: not under repair, not needing cleaning
-    available_rooms = qs.filter(
+    available_rooms = rooms.filter(
         is_available=True,
         needs_repair=False,
         needs_cleaning=False,
@@ -136,7 +130,7 @@ def rooms_for_building(request):
     
     # If editing, include the current room
     if current_room_id:
-        current_room = qs.filter(pk=current_room_id)
+        current_room = rooms.filter(pk=current_room_id)
         qs = (available_rooms | current_room).distinct()
     else:
         qs = available_rooms
@@ -155,19 +149,22 @@ def rooms_for_building(request):
         # Check if room is occupied
         is_occupied = getattr(room, 'has_overlapping_reservation', False)
         
-        # Get the HTML text and convert to plain text
+        # Get the base room info
         html_text = str(format_room_option(room))
+        plain_text = strip_tags(html_text).strip()
         
-        # If room is occupied, change "Available" to "Occupied"
-        if is_occupied:
-            # We need to handle the HTML properly - replace Available with Occupied
-            # Since format_room_option returns HTML, we'll work with the plain text
-            plain_text = strip_tags(html_text).strip()
-            # Replace "Available" with "Occupied" in the plain text
+        # If the room is occupied, replace "Available" with "Occupied"
+        # First, check if "Available" is in the text
+        if "Available" in plain_text and is_occupied:
             plain_text = plain_text.replace("Available", "Occupied")
-        else:
-            plain_text = strip_tags(html_text).strip()
-            
-        results.append({"id": room.pk, "text": plain_text})
+        # Also check for the emoji variant if it exists
+        elif "🍀" in plain_text and is_occupied:
+            plain_text = plain_text.replace("🍀", "🍟")
+        
+        results.append({
+            "id": room.pk, 
+            "text": plain_text,
+            "occupied": is_occupied
+        })
     
     return JsonResponse({"results": results})
