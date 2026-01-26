@@ -44,6 +44,11 @@
                         $.each(data.results, function(index, item) {
                             var option = new Option(item.text, item.id, false, false);
                             roomSelect.append(option);
+                            
+                            // If room is occupied, disable the option (but still show it)
+                            if (item.text.includes('Occupied') && item.id != currentValue) {
+                                option.disabled = true;
+                            }
                         });
                         
                         // Try to restore the current selection if it exists in the new options
