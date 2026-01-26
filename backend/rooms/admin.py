@@ -218,8 +218,26 @@ class ReservationAdmin(admin.ModelAdmin):
         "is_paid",
     )
 
+
+
+
     def get_fields(self, request, obj=None):
         fields = list(super().get_fields(request, obj))
+
+        # Ensure date fields come BEFORE building/room
+        for fname in ("check_in_date", "check_out_date"):
+            if fname in fields:
+                fields.remove(fname)
+
+        insert_at = 0
+        if "guests" in fields:
+            insert_at = fields.index("guests") + 1
+
+        # Insert dates right after guests
+        fields.insert(insert_at, "check_in_date")
+        fields.insert(insert_at + 1, "check_out_date")
+
+        # Existing logic: building before room
         if "room" in fields:
             if "building" in fields:
                 fields.remove("building")
@@ -228,7 +246,10 @@ class ReservationAdmin(admin.ModelAdmin):
         else:
             if "building" not in fields:
                 fields.append("building")
+
         return fields
+
+
 
     # ---------- Row action buttons ----------
     def row_actions(self, obj):
