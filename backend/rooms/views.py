@@ -1,5 +1,6 @@
 # rooms/views.py
 from datetime import date, datetime
+import re
 
 from django.http import JsonResponse, HttpResponseBadRequest
 from django.db.models.functions import Cast
@@ -50,6 +51,9 @@ def rooms_for_building(request):
             # If invalid date format, ignore and fall back
             pass
 
+    # Get today's date
+    today = date.today()
+    
     # Get rooms in this building
     rooms = Room.objects.filter(building_id=building_id)
     
@@ -78,7 +82,7 @@ def rooms_for_building(request):
         )
         
         # When editing, exclude the current reservation from overlap check
-        if reservation_id and current_room_id:
+        if reservation_id:
             overlapping_reservation = Exists(
                 Reservation.objects.filter(
                     room=OuterRef("pk"),
@@ -93,8 +97,6 @@ def rooms_for_building(request):
         rooms = rooms.annotate(has_overlapping_reservation=overlapping_reservation)
     else:
         # If no dates provided, fall back to checking active reservations for today
-        today = date.today()
-        
         # Check for active reservations (not cancelled, not checked out, spanning today)
         overlapping_reservation = Exists(
             Reservation.objects.filter(
@@ -107,7 +109,7 @@ def rooms_for_building(request):
         )
         
         # When editing, exclude the current reservation
-        if reservation_id and current_room_id:
+        if reservation_id:
             overlapping_reservation = Exists(
                 Reservation.objects.filter(
                     room=OuterRef("pk"),
@@ -152,29 +154,29 @@ def rooms_for_building(request):
         # Get the base room info - call format_room_option with the room object
         html_text = str(format_room_option(room))
         
-        # Debug: print the HTML text to see what format_room_option returns
-        # print(f"Room {room.id}: HTML text: {html_text}")
-        
         # Convert to plain text
         plain_text = strip_tags(html_text).strip()
         
         # Check if the room should be marked as occupied
         # Look for "Available" in the text (case-insensitive)
         if is_occupied:
-            # Replace "Available" with "Occupied" regardless of case
-            plain_text_lower = plain_text.lower()
-            if "available" in plain_text_lower:
-                # Find the position and preserve original case for the rest of the text
-                index = plain_text_lower.find("available")
-                plain_text = plain_text[:index] + "Occupied" + plain_text[index + len("available"):]
+            # IMPORTANT: We need to replace the status text properly
+            # The text from format_room_option might be like:
+            # "#1 (Floor 1) – Private room – Available – Capacity: 2"
+            # or with emoji: "#1 (Floor 1) – Private room – 🍀 – Capacity: 2"
             
-            # Also replace the emoji if present
-            if "🍀" in plain_text:
-                plain_text = plain_text.replace("🍀", "🍟")
-            elif "💬" in plain_text:  # Check for other emoji variants
-                plain_text = plain_text.replace("💬", "🍟")
-            elif "💭" in plain_text:  # Check for other emoji variants
-                plain_text = plain_text.replace("💭", "🍟")
+            # Strategy 1: Replace "Available" with "Occupied" (case-insensitive)
+            plain_text = re.sub(r'\bAvailable\b', 'Occupied', plain_text, flags=re.IGNORECASE)
+            
+            # Strategy 2: Replace emojis
+            plain_text = plain_text.replace("🍀", "🍟")
+            plain_text = plain_text.replace("💬", "🍟")
+            plain_text = plain_text.replace("💭", "🍟")
+            
+            # Strategy 3: If we still see "Available" (maybe with different formatting), replace it
+            if "available" in plain_text.lower():
+                # Find and replace any occurrence of "available" (case-insensitive)
+                plain_text = re.sub(r'available', 'Occupied', plain_text, flags=re.IGNORECASE)
         
         results.append({
             "id": room.pk, 
