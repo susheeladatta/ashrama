@@ -6,7 +6,7 @@
         var checkInDateInput = $('#id_check_in_date');
         var checkOutDateInput = $('#id_check_out_date');
         
-        // Function to update room options based on building selection and dates
+        // Function to update room options based on building selection
         function updateRoomOptions(buildingId) {
             if (buildingId) {
                 var data = {
@@ -40,7 +40,7 @@
                         // Add the empty option
                         roomSelect.append(new Option('---------', ''));
                         
-                        // Add all rooms
+                        // Add all available rooms
                         $.each(data.results, function(index, item) {
                             var option = new Option(item.text, item.id, false, false);
                             roomSelect.append(option);
@@ -93,16 +93,5 @@
         if (initialBuildingId) {
             updateRoomOptions(initialBuildingId);
         }
-        
-        // Also trigger update when page loads if dates are already filled
-        setTimeout(function() {
-            var initialBuildingId = buildingSelect.val();
-            var checkInDate = checkInDateInput.val();
-            var checkOutDate = checkOutDateInput.val();
-            
-            if (initialBuildingId && checkInDate && checkOutDate) {
-                updateRoomOptions(initialBuildingId);
-            }
-        }, 100);
     });
 })(django.jQuery);

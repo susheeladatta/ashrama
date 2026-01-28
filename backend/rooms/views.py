@@ -1,9 +1,10 @@
 # rooms/views.py
 from datetime import date, datetime
+import re
 
 from django.http import JsonResponse, HttpResponseBadRequest
 from django.db.models.functions import Cast
-from django.db.models import IntegerField, Q
+from django.db.models import IntegerField, Exists, OuterRef
 from django.utils.html import strip_tags
 from django.views.decorators.http import require_GET
 
@@ -50,17 +51,26 @@ def rooms_for_building(request):
             # If invalid date format, ignore and fall back
             pass
 
+    # Get today's date
+    today = date.today()
+    
+    # Check for active reservations (not cancelled, spanning today)
+    active_reservation = Exists(
+        Reservation.objects.filter(
+            room=OuterRef("pk"),
+            is_cancelled=False,
+            check_in_date__lte=today,
+            check_out_date__gt=today,
+        )
+    )
+    
     # Get rooms in this building
     rooms = Room.objects.filter(building_id=building_id)
     
-    # Filter for available rooms: not under repair, not needing cleaning
-    available_rooms = rooms.filter(
-        is_available=True,
-        needs_repair=False,
-        needs_cleaning=False,
-    )
+    # Annotate with active reservation info
+    rooms = rooms.annotate(has_active_reservation=active_reservation)
     
-    # For editing existing reservation, get the current room
+    # For editing existing reservation, include the current room even if occupied
     current_room_id = None
     if reservation_id:
         try:
@@ -69,7 +79,15 @@ def rooms_for_building(request):
         except Reservation.DoesNotExist:
             pass
     
-    # If editing, include the current room (even if under repair or needs cleaning)
+    # Filter for available rooms: not under repair, not needing cleaning, not occupied
+    available_rooms = rooms.filter(
+        is_available=True,
+        needs_repair=False,
+        needs_cleaning=False,
+        has_active_reservation=False
+    )
+    
+    # If editing, include the current room
     if current_room_id:
         current_room = rooms.filter(pk=current_room_id)
         qs = (available_rooms | current_room).distinct()
@@ -87,37 +105,31 @@ def rooms_for_building(request):
     # Format results - convert HTML to plain text for dropdown
     results = []
     for room in qs:
+        html_text = str(format_room_option(room))
+        plain_text = strip_tags(html_text).strip()
+        
+        # Check if room is occupied for the selected dates
         is_occupied = False
         
         # Only check occupancy if dates are provided
         if check_in_date and check_out_date:
-            # Check for overlapping reservations that are not cancelled and not checked out
+            # Check for overlapping reservations
             overlapping_reservations = Reservation.objects.filter(
                 room=room,
                 is_cancelled=False,
-                is_checked_out=False,
-            ).filter(
-                # The date range overlaps if:
-                # 1. Reservation starts before the new check-out date AND
-                # 2. Reservation ends after the new check-in date
-                Q(check_in_date__lt=check_out_date) & Q(check_out_date__gt=check_in_date)
+                check_in_date__lt=check_out_date,
+                check_out_date__gt=check_in_date,
             )
             
             # When editing, exclude the current reservation
             if reservation_id:
                 overlapping_reservations = overlapping_reservations.exclude(pk=reservation_id)
             
-            # If there are any overlapping reservations, the room is occupied
             is_occupied = overlapping_reservations.exists()
-        
-        # Get the base room info
-        html_text = str(format_room_option(room))
-        plain_text = strip_tags(html_text).strip()
         
         # If the room is occupied for the selected dates, mark it as Occupied
         if is_occupied:
             # Replace "Available" with "Occupied" (case-insensitive)
-            import re
             plain_text = re.sub(r'available', 'Occupied', plain_text, flags=re.IGNORECASE)
             
             # Also replace emojis
@@ -125,10 +137,6 @@ def rooms_for_building(request):
             plain_text = plain_text.replace("💬", "🍟")
             plain_text = plain_text.replace("💭", "🍟")
         
-        results.append({
-            "id": room.pk, 
-            "text": plain_text,
-            "occupied": is_occupied
-        })
+        results.append({"id": room.pk, "text": plain_text, "occupied": is_occupied})
     
     return JsonResponse({"results": results})
