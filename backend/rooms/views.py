@@ -1,6 +1,5 @@
 # rooms/views.py
 from datetime import date, datetime
-import re
 
 from django.http import JsonResponse, HttpResponseBadRequest
 from django.db.models.functions import Cast
@@ -51,26 +50,10 @@ def rooms_for_building(request):
             # If invalid date format, ignore and fall back
             pass
 
-    # Get today's date
-    today = date.today()
-    
-    # Check for active reservations (not cancelled, spanning today)
-    active_reservation = Exists(
-        Reservation.objects.filter(
-            room=OuterRef("pk"),
-            is_cancelled=False,
-            check_in_date__lte=today,
-            check_out_date__gt=today,
-        )
-    )
-    
     # Get rooms in this building
     rooms = Room.objects.filter(building_id=building_id)
     
-    # Annotate with active reservation info
-    rooms = rooms.annotate(has_active_reservation=active_reservation)
-    
-    # For editing existing reservation, include the current room even if occupied
+    # For editing existing reservation, get the current room
     current_room_id = None
     if reservation_id:
         try:
@@ -79,12 +62,70 @@ def rooms_for_building(request):
         except Reservation.DoesNotExist:
             pass
     
-    # Filter for available rooms: not under repair, not needing cleaning, not occupied
+    # Check for overlapping reservations if dates are provided
+    if check_in_date and check_out_date:
+        # Check for reservations that overlap with the given date range
+        # Condition: reservation ends after check-in AND starts before check-out
+        # AND is not cancelled AND not checked out
+        overlapping_reservation = Exists(
+            Reservation.objects.filter(
+                room=OuterRef("pk"),
+                is_cancelled=False,
+                is_checked_out=False,
+                check_out_date__gt=check_in_date,
+                check_in_date__lt=check_out_date,
+            )
+        )
+        
+        # When editing, exclude the current reservation from overlap check
+        if reservation_id and current_room_id:
+            overlapping_reservation = Exists(
+                Reservation.objects.filter(
+                    room=OuterRef("pk"),
+                    is_cancelled=False,
+                    is_checked_out=False,
+                    check_out_date__gt=check_in_date,
+                    check_in_date__lt=check_out_date,
+                ).exclude(pk=reservation_id)
+            )
+        
+        # Annotate with overlapping reservation info
+        rooms = rooms.annotate(has_overlapping_reservation=overlapping_reservation)
+    else:
+        # If no dates provided, fall back to checking active reservations for today
+        today = date.today()
+        
+        # Check for active reservations (not cancelled, not checked out, spanning today)
+        overlapping_reservation = Exists(
+            Reservation.objects.filter(
+                room=OuterRef("pk"),
+                is_cancelled=False,
+                is_checked_out=False,
+                check_in_date__lte=today,
+                check_out_date__gt=today,
+            )
+        )
+        
+        # When editing, exclude the current reservation
+        if reservation_id and current_room_id:
+            overlapping_reservation = Exists(
+                Reservation.objects.filter(
+                    room=OuterRef("pk"),
+                    is_cancelled=False,
+                    is_checked_out=False,
+                    check_in_date__lte=today,
+                    check_out_date__gt=today,
+                ).exclude(pk=reservation_id)
+            )
+        
+        # Annotate with overlapping reservation info
+        rooms = rooms.annotate(has_overlapping_reservation=overlapping_reservation)
+    
+    # Filter for available rooms: not under repair, not needing cleaning
     available_rooms = rooms.filter(
         is_available=True,
         needs_repair=False,
         needs_cleaning=False,
-        has_active_reservation=False
     )
     
     # If editing, include the current room
@@ -105,38 +146,40 @@ def rooms_for_building(request):
     # Format results - convert HTML to plain text for dropdown
     results = []
     for room in qs:
+        # Check if room is occupied
+        is_occupied = getattr(room, 'has_overlapping_reservation', False)
+        
+        # Get the base room info - call format_room_option with the room object
         html_text = str(format_room_option(room))
+        
+        # Debug: print the HTML text to see what format_room_option returns
+        # print(f"Room {room.id}: HTML text: {html_text}")
+        
+        # Convert to plain text
         plain_text = strip_tags(html_text).strip()
         
-        # Check if room is occupied for the selected dates
-        is_occupied = False
-        
-        # Only check occupancy if dates are provided
-        if check_in_date and check_out_date:
-            # Check for overlapping reservations
-            overlapping_reservations = Reservation.objects.filter(
-                room=room,
-                is_cancelled=False,
-                check_in_date__lt=check_out_date,
-                check_out_date__gt=check_in_date,
-            )
-            
-            # When editing, exclude the current reservation
-            if reservation_id:
-                overlapping_reservations = overlapping_reservations.exclude(pk=reservation_id)
-            
-            is_occupied = overlapping_reservations.exists()
-        
-        # If the room is occupied for the selected dates, mark it as Occupied
+        # Check if the room should be marked as occupied
+        # Look for "Available" in the text (case-insensitive)
         if is_occupied:
-            # Replace "Available" with "Occupied" (case-insensitive)
-            plain_text = re.sub(r'available', 'Occupied', plain_text, flags=re.IGNORECASE)
+            # Replace "Available" with "Occupied" regardless of case
+            plain_text_lower = plain_text.lower()
+            if "available" in plain_text_lower:
+                # Find the position and preserve original case for the rest of the text
+                index = plain_text_lower.find("available")
+                plain_text = plain_text[:index] + "Occupied" + plain_text[index + len("available"):]
             
-            # Also replace emojis
-            plain_text = plain_text.replace("🍀", "🍟")
-            plain_text = plain_text.replace("💬", "🍟")
-            plain_text = plain_text.replace("💭", "🍟")
+            # Also replace the emoji if present
+            if "🍀" in plain_text:
+                plain_text = plain_text.replace("🍀", "🍟")
+            elif "💬" in plain_text:  # Check for other emoji variants
+                plain_text = plain_text.replace("💬", "🍟")
+            elif "💭" in plain_text:  # Check for other emoji variants
+                plain_text = plain_text.replace("💭", "🍟")
         
-        results.append({"id": room.pk, "text": plain_text, "occupied": is_occupied})
+        results.append({
+            "id": room.pk, 
+            "text": plain_text,
+            "occupied": is_occupied
+        })
     
     return JsonResponse({"results": results})
