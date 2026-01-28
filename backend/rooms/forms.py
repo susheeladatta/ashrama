@@ -76,16 +76,20 @@ class ReservationAdminForm(forms.ModelForm):
             rooms = rooms.filter(building_id=building_id)
 
         # ---------------------------------------------------
-        # SIMPLE OCCUPANCY CHECK (Python, not ORM magic)
+        # OCCUPANCY CHECK - Check for date overlap
         # ---------------------------------------------------
         occupied_ids = set()
 
         if check_in and check_out:
+            # Find reservations that overlap with the given date range
+            # Reservation overlaps if:
+            # 1. Reservation starts before the new check-out date AND
+            # 2. Reservation ends after the new check-in date
             conflicts = Reservation.objects.filter(
                 is_cancelled=False,
                 is_checked_out=False,
-                check_in_date__lt=check_out,
-                check_out_date__gt=check_in,
+            ).filter(
+                Q(check_in_date__lt=check_out) & Q(check_out_date__gt=check_in)
             )
 
             if instance.pk:
@@ -98,10 +102,10 @@ class ReservationAdminForm(forms.ModelForm):
         def room_label(room):
             base = format_room_option(room)
             if room.id in occupied_ids:
-                # Replace any variant of "Available" with "Occupied" (case-insensitive)
+                # Replace "Available" with "Occupied" (case-insensitive)
                 import re
-                base = re.sub(r'Available', 'Occupied', base, flags=re.IGNORECASE)
-                # Replace various emoji with occupied emoji
+                base = re.sub(r'available', 'Occupied', base, flags=re.IGNORECASE)
+                # Replace emojis
                 base = base.replace("🍀", "🍟")
                 base = base.replace("💬", "🍟")
                 base = base.replace("💭", "🍟")
@@ -110,7 +114,7 @@ class ReservationAdminForm(forms.ModelForm):
         self.fields["room"].label_from_instance = room_label
 
     # ---------------------------------------------------
-    # HARD BLOCK ON SAVE
+    # HARD BLOCK ON SAVE - Same overlap check
     # ---------------------------------------------------
     def clean(self):
         cleaned = super().clean()
@@ -126,8 +130,8 @@ class ReservationAdminForm(forms.ModelForm):
             room=room,
             is_cancelled=False,
             is_checked_out=False,
-            check_in_date__lt=check_out,
-            check_out_date__gt=check_in,
+        ).filter(
+            Q(check_in_date__lt=check_out) & Q(check_out_date__gt=check_in)
         )
 
         if self.instance.pk:
