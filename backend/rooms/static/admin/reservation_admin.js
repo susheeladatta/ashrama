@@ -40,14 +40,16 @@
                         // Add the empty option
                         roomSelect.append(new Option('---------', ''));
                         
-                        // Add all rooms
+                        // Add all available rooms
                         $.each(data.results, function(index, item) {
                             var option = new Option(item.text, item.id, false, false);
                             roomSelect.append(option);
                             
-                            // If room is occupied and not the current room, disable it
+                            // If room is occupied, disable the option (but still show it)
                             if (item.occupied && String(item.id) !== String(currentValue)) {
                                 option.disabled = true;
+                                // Add a class for styling if needed
+                                $(option).addClass('occupied-room');
                             }
                         });
                         
@@ -57,6 +59,12 @@
                         }
                         
                         roomSelect.trigger('change');
+                        
+                        // Log for debugging
+                        console.log('Updated room options:', data.results.length, 'rooms loaded');
+                    },
+                    error: function(xhr, status, error) {
+                        console.error('Error loading rooms:', error);
                     }
                 });
             } else {
@@ -87,11 +95,38 @@
                 updateRoomOptions(buildingId);
             }
         });
+        
+        // Also trigger on date input blur (when user finishes typing)
+        checkInDateInput.blur(function() {
+            var buildingId = buildingSelect.val();
+            if (buildingId && checkInDateInput.val() && checkOutDateInput.val()) {
+                updateRoomOptions(buildingId);
+            }
+        });
+        
+        checkOutDateInput.blur(function() {
+            var buildingId = buildingSelect.val();
+            if (buildingId && checkInDateInput.val() && checkOutDateInput.val()) {
+                updateRoomOptions(buildingId);
+            }
+        });
 
         // Initialize on page load if building is already selected
         var initialBuildingId = buildingSelect.val();
         if (initialBuildingId) {
             updateRoomOptions(initialBuildingId);
         }
+        
+        // Also trigger update when page loads if dates are already filled
+        // This handles the case when page is reloaded or validation fails
+        setTimeout(function() {
+            var initialBuildingId = buildingSelect.val();
+            var checkInDate = checkInDateInput.val();
+            var checkOutDate = checkOutDateInput.val();
+            
+            if (initialBuildingId && checkInDate && checkOutDate) {
+                updateRoomOptions(initialBuildingId);
+            }
+        }, 500); // Increased delay to ensure page is fully loaded
     });
 })(django.jQuery);
