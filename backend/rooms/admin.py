@@ -199,11 +199,34 @@ class ReservationAdmin(admin.ModelAdmin):
             "all": ("admin/css/reservation_actions.css",)
         }
 
+    def reservation_title(self, obj):
+        guests = ", ".join(g.full_name for g in obj.guests.all())
+        room = obj.room
+
+        if room:
+            building = room.building.name
+            room_no = room.number
+            floor_no = room.floor.number if room.floor else "-"
+            location = f"{building} (Room {room_no}, Floor {floor_no})"
+        else:
+            location = "No room assigned"
+
+        return format_html(
+            "<strong>{}</strong><br><span style='color:#aaa'>{}</span>",
+            guests,
+            location
+        )
+
+    reservation_title.short_description = "Reservation"
+
+
     form = ReservationAdminForm
     filter_horizontal = ("guests",)
 
     list_display = (
-        "__str__",
+        "reservation_title",
+        "check_in_date",
+        "check_out_date",
         "is_checked_in",
         "is_checked_out",
         "is_cancelled",
