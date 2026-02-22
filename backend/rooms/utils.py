@@ -36,26 +36,38 @@ def _status_bits(room: Room) -> str:
     return "❌ Unavailable"
 
 
-def format_room_option(room: Room) -> str:
+def format_room_option(room):
     """
-    Example:  "#1 (Floor 1) – Private room – ✅ Available – Capacity: 3"
+    This is used for:
+    - Reservation admin dropdown
+    - AJAX rooms-for-building endpoint
+
+    IMPORTANT:
+    Availability here MUST match the Room admin list
     """
-    number = getattr(room, "number", "")
-    floor_no = getattr(getattr(room, "floor", None), "number", "")
-    try:
-        room_type = room.get_room_type_display()
-    except Exception:
-        room_type = str(getattr(room, "room_type", ""))
 
-    capacity = getattr(room, "capacity", None)
-    capacity_bit = f" – Capacity: {capacity}" if capacity not in (None, "") else ""
-    status = _status_bits(room)
+    # ---- REAL availability check (same logic as admin list) ----
+    today = now().date()
 
-    return format_html(
-        "#{} (Floor {}) – {} – {}{}",
-        number,
-        floor_no,
-        room_type,
-        status,
-        capacity_bit,
+    has_active_reservation = Reservation.objects.filter(
+        room=room,
+        is_cancelled=False,
+        check_in_date__lte=today,
+        check_out_date__gt=today,
+    ).exists()
+
+    if has_active_reservation:
+        status_label = "🧳 Occupied"
+    else:
+        status_label = "✅ Available"
+
+    # ---- Safe floor handling (numeric input) ----
+    floor_number = room.floor if room.floor is not None else "?"
+
+    return (
+        f"#{room.number} "
+        f"(Floor {floor_number}) – "
+        f"{room.get_room_type_display()} – "
+        f"{status_label} – "
+        f"Capacity: {room.capacity}"
     )
