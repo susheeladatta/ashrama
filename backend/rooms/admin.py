@@ -194,9 +194,13 @@ class GuestAdmin(admin.ModelAdmin):
 @admin.register(Reservation)
 class ReservationAdmin(admin.ModelAdmin):
     class Media:
-        js = ("admin/reservation_admin.js",)
+        js = ("admin/reservation_admin.js",
+            "https://cdn.jsdelivr.net/npm/flatpickr",
+            "admin/reservation_calendar.js")
         css = {
-            "all": ("admin/css/reservation_actions.css",)
+            "all": ("admin/css/reservation_actions.css",
+                    "https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"
+                    )
         }
 
     def reservation_title(self, obj):
