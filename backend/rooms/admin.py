@@ -227,23 +227,51 @@ class ReservationAdmin(admin.ModelAdmin):
     form = ReservationAdminForm
     filter_horizontal = ("guests",)
 
-    list_display = (
-        "reservation_title",
-        "check_in_date",
-        "check_out_date",
-        "is_checked_in",
-        "is_checked_out",
-        "is_cancelled",
-        "is_paid",
-        "row_actions",
+    fieldsets = (
+        ("Guests", {
+            "fields": ("guests",),
+        }),
+        ("Room selection", {
+            "fields": ("building", "room"),
+            "description": "Select building and room before choosing dates.",
+        }),
+        ("Booking dates", {
+            "fields": ("check_in_date", "check_out_date"),
+        }),
+        ("Status", {
+            "fields": (
+                "is_checked_in",
+                "is_checked_out",
+                "is_cancelled",
+                "is_paid",
+                "allow_guest_overlap",
+            ),
+        }),
     )
 
-    list_filter = (
-        "is_checked_in",
-        "is_checked_out",
-        "is_cancelled",
-        "is_paid",
-    )
+    class Media:
+        js = (
+            "admin/js/jquery.init.js",
+            "rooms/js/reservation_calendar.js",
+        )
+
+   # list_display = (
+   #    "reservation_title",
+   #    "check_in_date",
+   #    "check_out_date",
+   #    "is_checked_in",
+   #    "is_checked_out",
+   #    "is_cancelled",
+   #     "is_paid",
+   #     "row_actions",
+    #)
+
+    #list_filter = (
+    #    "is_checked_in",
+    #    "is_checked_out",
+    #    "is_cancelled",
+   #     "is_paid",
+   # )
 
     # -------------------------------------------------
     # FORCE FIELD ORDER (form was overriding before)
