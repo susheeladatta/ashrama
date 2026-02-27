@@ -199,9 +199,19 @@ class ReservationAdmin(admin.ModelAdmin):
             "admin/reservation_calendar.js")
         css = {
             "all": ("admin/css/reservation_actions.css",
-                    "https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"
-                    )
+                    "https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css")
         }
+
+        # class Media:
+        # css = {
+        #     "all": (
+        #         "https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css",
+        #     )
+        # }
+        # js = (
+        #     "https://cdn.jsdelivr.net/npm/flatpickr",
+        #     "admin/reservation_calendar.js",
+        # )
 
     def reservation_title(self, obj):
         guests = ", ".join(g.full_name for g in obj.guests.all())
@@ -227,51 +237,23 @@ class ReservationAdmin(admin.ModelAdmin):
     form = ReservationAdminForm
     filter_horizontal = ("guests",)
 
-    fieldsets = (
-        ("Guests", {
-            "fields": ("guests",),
-        }),
-        ("Room selection", {
-            "fields": ("building", "room"),
-            "description": "Select building and room before choosing dates.",
-        }),
-        ("Booking dates", {
-            "fields": ("check_in_date", "check_out_date"),
-        }),
-        ("Status", {
-            "fields": (
-                "is_checked_in",
-                "is_checked_out",
-                "is_cancelled",
-                "is_paid",
-                "allow_guest_overlap",
-            ),
-        }),
+    list_display = (
+        "reservation_title",
+        "check_in_date",
+        "check_out_date",
+        "is_checked_in",
+        "is_checked_out",
+        "is_cancelled",
+        "is_paid",
+        "row_actions",
     )
 
-    class Media:
-        js = (
-            "admin/js/jquery.init.js",
-            "rooms/js/reservation_calendar.js",
-        )
-
-   # list_display = (
-   #    "reservation_title",
-   #    "check_in_date",
-   #    "check_out_date",
-   #    "is_checked_in",
-   #    "is_checked_out",
-   #    "is_cancelled",
-   #     "is_paid",
-   #     "row_actions",
-    #)
-
-    #list_filter = (
-    #    "is_checked_in",
-    #    "is_checked_out",
-    #    "is_cancelled",
-   #     "is_paid",
-   # )
+    list_filter = (
+        "is_checked_in",
+        "is_checked_out",
+        "is_cancelled",
+        "is_paid",
+    )
 
     # -------------------------------------------------
     # FORCE FIELD ORDER (form was overriding before)
