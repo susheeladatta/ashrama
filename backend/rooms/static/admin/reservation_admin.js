@@ -1,7 +1,4 @@
 // static/admin/reservation_admin.js
-// Hotel-style room reservation form
-// Flow: Building → Room → Calendar dates
-
 (function($) {
     $(document).ready(function() {
         var roomSelect = $('#id_room');
@@ -9,16 +6,21 @@
         var checkInDateInput = $('#id_check_in_date');
         var checkOutDateInput = $('#id_check_out_date');
         
-        console.log('✓ Reservation admin script loaded');
-        
-        /**
-         * Update room options based on building selection
-         */
+        // Function to update room options based on building selection and dates
         function updateRoomOptions(buildingId) {
             if (buildingId) {
                 var data = {
                     'building': buildingId
                 };
+                
+                // Add check-in and check-out dates if available
+                var checkInDate = checkInDateInput.val();
+                var checkOutDate = checkOutDateInput.val();
+                
+                if (checkInDate && checkOutDate) {
+                    data.check_in_date = checkInDate;
+                    data.check_out_date = checkOutDate;
+                }
                 
                 // Check if we're editing an existing reservation
                 var path = window.location.pathname;
@@ -34,6 +36,8 @@
                         var currentValue = roomSelect.val();
                         
                         roomSelect.empty();
+                        
+                        // Add the empty option
                         roomSelect.append(new Option('---------', ''));
                         
                         // Add all available rooms
@@ -44,20 +48,23 @@
                             // If room is occupied, disable the option (but still show it)
                             if (item.occupied && String(item.id) !== String(currentValue)) {
                                 option.disabled = true;
+                                // Add a class for styling if needed
                                 $(option).addClass('occupied-room');
                             }
                         });
                         
-                        // Try to restore the current selection if it exists
+                        // Try to restore the current selection if it exists in the new options
                         if (currentValue) {
                             roomSelect.val(currentValue);
                         }
                         
                         roomSelect.trigger('change');
-                        console.log('✓ Updated room options:', data.results.length, 'rooms available');
+                        
+                        // Log for debugging
+                        console.log('Updated room options:', data.results.length, 'rooms loaded');
                     },
                     error: function(xhr, status, error) {
-                        console.error('✗ Error loading rooms:', error);
+                        console.error('Error loading rooms:', error);
                     }
                 });
             } else {
@@ -68,34 +75,58 @@
             }
         }
 
-        /**
-         * EVENT: Building selection changes
-         * This is the PRIMARY trigger for the hotel-style flow
-         */
-        buildingSelect.on('change', function() {
+        // When building selection changes
+        buildingSelect.change(function() {
             var buildingId = $(this).val();
-            console.log('Building selected:', buildingId);
             updateRoomOptions(buildingId);
-            // Clear dates when building changes
-            checkInDateInput.val('');
-            checkOutDateInput.val('');
         });
         
-        /**
-         * EVENT: Room selection changes
-         * Calendar will load in reservation_calendar.js
-         */
-        roomSelect.on('change', function() {
-            console.log('Room selected:', $(this).val());
+        // When check-in or check-out dates change, update room options if building is selected
+        checkInDateInput.change(function() {
+            var buildingId = buildingSelect.val();
+            if (buildingId) {
+                updateRoomOptions(buildingId);
+            }
         });
         
-        /**
-         * Initialize on page load
-         */
+        checkOutDateInput.change(function() {
+            var buildingId = buildingSelect.val();
+            if (buildingId) {
+                updateRoomOptions(buildingId);
+            }
+        });
+        
+        // Also trigger on date input blur (when user finishes typing)
+        checkInDateInput.blur(function() {
+            var buildingId = buildingSelect.val();
+            if (buildingId && checkInDateInput.val() && checkOutDateInput.val()) {
+                updateRoomOptions(buildingId);
+            }
+        });
+        
+        checkOutDateInput.blur(function() {
+            var buildingId = buildingSelect.val();
+            if (buildingId && checkInDateInput.val() && checkOutDateInput.val()) {
+                updateRoomOptions(buildingId);
+            }
+        });
+
+        // Initialize on page load if building is already selected
         var initialBuildingId = buildingSelect.val();
         if (initialBuildingId) {
-            console.log('Initial building found:', initialBuildingId);
             updateRoomOptions(initialBuildingId);
         }
+        
+        // Also trigger update when page loads if dates are already filled
+        // This handles the case when page is reloaded or validation fails
+        setTimeout(function() {
+            var initialBuildingId = buildingSelect.val();
+            var checkInDate = checkInDateInput.val();
+            var checkOutDate = checkOutDateInput.val();
+            
+            if (initialBuildingId && checkInDate && checkOutDate) {
+                updateRoomOptions(initialBuildingId);
+            }
+        }, 500); // Increased delay to ensure page is fully loaded
     });
 })(django.jQuery);
