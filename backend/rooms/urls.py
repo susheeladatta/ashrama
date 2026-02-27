@@ -3,8 +3,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .api_views import RoomViewSet, BuildingViewSet, FloorViewSet, GuestViewSet, ReservationViewSet
 from admin_notification.views import check_notification_view
-from .views import rooms_for_building
-from .views import room_availability
+from .views import rooms_for_building, room_availability  # ADD room_availability HERE
 
 router = DefaultRouter()
 router.register(r'rooms', RoomViewSet)
@@ -16,7 +15,6 @@ router.register(r'reservations', ReservationViewSet)
 urlpatterns = [
     path('', include(router.urls)),
     path('check/notification', check_notification_view, name='check_notifications'),
-    # NEW: admin AJAX endpoint to populate rooms based on building
     path('rooms-for-building/', rooms_for_building, name='rooms_for_building'),
-    path("room-availability/", room_availability, name="room_availability")
+    path('room-availability/', room_availability, name='room_availability'),  # ADD THIS LINE
 ]

@@ -36,13 +36,20 @@ class RoomAdminForm(forms.ModelForm):
 
 
 # ---------------------------------------------------------
-# RESERVATION ADMIN FORM
+# RESERVATION ADMIN FORM - HOTEL STYLE
 # ---------------------------------------------------------
 class ReservationAdminForm(forms.ModelForm):
+    """
+    Hotel-style reservation form:
+    1. Select Building
+    2. Select Room (with availability for the selected room)
+    3. Select dates on calendar
+    """
     building = forms.ModelChoiceField(
         queryset=Building.objects.all(),
         required=False,
         label="Building",
+        empty_label="--- Select Building ---"
     )
 
     class Meta:
@@ -52,6 +59,7 @@ class ReservationAdminForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        # Set up the building field with AJAX URL
         try:
             self.fields["building"].widget.attrs["data-rooms-url"] = reverse("rooms_for_building")
         except Exception:
@@ -66,22 +74,26 @@ class ReservationAdminForm(forms.ModelForm):
             except Exception:
                 pass
 
+        # Get selected building
         building_id = self.data.get("building") or self.initial.get("building")
+        
+        # Get selected room
+        room_id = self.data.get("room") or self.initial.get("room")
+
+        # Get dates if available
         check_in = self.data.get("check_in_date") or self.initial.get("check_in_date")
         check_out = self.data.get("check_out_date") or self.initial.get("check_out_date")
 
+        # Filter rooms by building
         rooms = Room.objects.all()
-
         if building_id:
             rooms = rooms.filter(building_id=building_id)
 
-        # ---------------------------------------------------
-        # SIMPLE OCCUPANCY CHECK (Python, not ORM magic)
-        # ---------------------------------------------------
+        # Check occupancy for the selected room only
         occupied_ids = set()
-
-        if check_in and check_out:
+        if room_id and check_in and check_out:
             conflicts = Reservation.objects.filter(
+                room_id=room_id,
                 is_cancelled=False,
                 is_checked_out=False,
                 check_in_date__lt=check_out,
@@ -91,7 +103,8 @@ class ReservationAdminForm(forms.ModelForm):
             if instance.pk:
                 conflicts = conflicts.exclude(pk=instance.pk)
 
-            occupied_ids = set(conflicts.values_list("room_id", flat=True))
+            if conflicts.exists():
+                occupied_ids.add(room_id)
 
         self.fields["room"].queryset = rooms
 
@@ -119,9 +132,15 @@ class ReservationAdminForm(forms.ModelForm):
         check_in = cleaned.get("check_in_date")
         check_out = cleaned.get("check_out_date")
 
+        # Ensure all required fields are present
         if not room or not check_in or not check_out:
-            return cleaned
+            raise ValidationError("Building, Room, Check-in date, and Check-out date are required.")
 
+        # Check date logic
+        if check_in >= check_out:
+            raise ValidationError("Check-in date must be before check-out date.")
+
+        # Check for conflicting reservations
         conflicts = Reservation.objects.filter(
             room=room,
             is_cancelled=False,
@@ -130,15 +149,15 @@ class ReservationAdminForm(forms.ModelForm):
             check_out_date__gt=check_in,
         )
 
+        # Exclude the current reservation if editing
         if self.instance.pk:
             conflicts = conflicts.exclude(pk=self.instance.pk)
 
         if conflicts.exists():
-            r = conflicts.first()
-            guests = ", ".join(g.full_name for g in r.guests.all())
+            conflicting_res = conflicts.first()
             raise ValidationError(
-                f"Room already occupied by {guests} "
-                f"from {r.check_in_date} to {r.check_out_date}"
+                f"Room is occupied from {conflicting_res.check_in_date} to {conflicting_res.check_out_date}. "
+                f"Please choose different dates or a different room."
             )
 
         return cleaned
