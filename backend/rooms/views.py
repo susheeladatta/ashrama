@@ -343,3 +343,29 @@ def rooms_for_building(request):
     
     return JsonResponse({"results": results})
 
+@require_GET
+def room_availability(request):
+    """
+    Returns booked date ranges for a given room.
+    Used by admin inline calendar.
+    """
+    room_id = request.GET.get("room_id")
+    if not room_id:
+        return JsonResponse({"booked": []})
+
+    reservations = Reservation.objects.filter(
+        room_id=room_id,
+        is_cancelled=False,
+    ).exclude(
+        Q(check_in_date__isnull=True) |
+        Q(check_out_date__isnull=True)
+    )
+
+    booked = []
+    for r in reservations:
+        booked.append({
+            "from": r.check_in_date.isoformat(),
+            "to": r.check_out_date.isoformat(),
+        })
+
+    return JsonResponse({"booked": booked})
