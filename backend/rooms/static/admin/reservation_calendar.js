@@ -34,6 +34,10 @@ document.addEventListener("DOMContentLoaded", function () {
                         if (selectedDates.length === 2) {
                             checkIn.value = flatpickr.formatDate(selectedDates[0], "Y-m-d");
                             checkOut.value = flatpickr.formatDate(selectedDates[1], "Y-m-d");
+                            
+                            // Trigger change events so room dropdown updates
+                            $(checkIn).trigger('change');
+                            $(checkOut).trigger('change');
                         }
                     }
                 });
