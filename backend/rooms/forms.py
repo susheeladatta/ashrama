@@ -119,31 +119,26 @@ class ReservationAdminForm(forms.ModelForm):
         check_in = cleaned.get("check_in_date")
         check_out = cleaned.get("check_out_date")
 
-        if not room:
-            raise ValidationError("Room is required.")
+        if not room or not check_in or not check_out:
+            return cleaned
 
-        if not check_in or not check_out:
-            raise ValidationError("Check-in and check-out dates are required.")
+        conflicts = Reservation.objects.filter(
+            room=room,
+            is_cancelled=False,
+            is_checked_out=False,
+            check_in_date__lt=check_out,
+            check_out_date__gt=check_in,
+        )
 
-        if check_in >= check_out:
-            raise ValidationError("Check-in date must be before check-out date.")
+        if self.instance.pk:
+            conflicts = conflicts.exclude(pk=self.instance.pk)
 
-        # Only check conflicts if room and dates are set
-        if room and check_in and check_out:
-            conflicts = Reservation.objects.filter(
-                room=room,
-                is_cancelled=False,
-                is_checked_out=False,
-                check_in_date__lt=check_out,
-                check_out_date__gt=check_in,
+        if conflicts.exists():
+            r = conflicts.first()
+            guests = ", ".join(g.full_name for g in r.guests.all())
+            raise ValidationError(
+                f"Room already occupied by {guests} "
+                f"from {r.check_in_date} to {r.check_out_date}"
             )
-
-            if self.instance.pk:
-                conflicts = conflicts.exclude(pk=self.instance.pk)
-
-            if conflicts.exists():
-                raise ValidationError(
-                    "This room is already booked for the selected dates. Please choose different dates."
-                )
 
         return cleaned

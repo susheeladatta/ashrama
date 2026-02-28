@@ -112,36 +112,29 @@ class FloorAdmin(_HiddenModelAdmin):
 
 
 class RealAvailabilityFilter(SimpleListFilter):
-    title = "Availability (now)"
-    parameter_name = "is_available_now"
+    title = "Real-time availability"
+    parameter_name = "rt_available"
 
     def lookups(self, request, model_admin):
-        return (
-            ("1", "Available"),
-            ("0", "Occupied"),
-        )
+        return (("1", "Available"), ("0", "Unavailable"))
 
     def queryset(self, request, queryset):
         today = timezone.now().date()
-        
-        _is_available_now = Case(
-            When(
-                Exists(
-                    Reservation.objects.filter(
-                        room=OuterRef("pk"),
-                        is_cancelled=False,
-                        is_checked_out=False,
-                        check_in_date__lte=today,
-                        check_out_date__gt=today,
-                    )
-                ),
-                then=Value(False),
-            ),
+        occupied_now = Exists(
+            Reservation.objects.filter(
+                room=OuterRef("pk"),
+                is_cancelled=False,
+                is_checked_out=False,
+                check_in_date__lte=today,
+                check_out_date__gt=today,
+            )
+        )
+        is_available_now = Case(
+            When(occupied_now, then=Value(False)),
             default=Value(True),
             output_field=BooleanField(),
         )
-        
-        queryset = queryset.annotate(_is_available_now=_is_available_now)
+        queryset = queryset.annotate(_is_available_now=is_available_now)
 
         if self.value() == "1":
             return queryset.filter(_is_available_now=True)
@@ -201,17 +194,24 @@ class GuestAdmin(admin.ModelAdmin):
 @admin.register(Reservation)
 class ReservationAdmin(admin.ModelAdmin):
     class Media:
-        js = (
-            "admin/reservation_admin.js",
+        js = ("admin/reservation_admin.js",
             "https://cdn.jsdelivr.net/npm/flatpickr",
-            "admin/reservation_calendar.js"
-        )
+            "admin/reservation_calendar.js")
         css = {
-            "all": (
-                "admin/css/reservation_actions.css",
-                "https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"
-            )
+            "all": ("admin/css/reservation_actions.css",
+                    "https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css")
         }
+
+        # class Media:
+        # css = {
+        #     "all": (
+        #         "https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css",
+        #     )
+        # }
+        # js = (
+        #     "https://cdn.jsdelivr.net/npm/flatpickr",
+        #     "admin/reservation_calendar.js",
+        # )
 
     def reservation_title(self, obj):
         guests = ", ".join(g.full_name for g in obj.guests.all())
@@ -266,50 +266,98 @@ class ReservationAdmin(admin.ModelAdmin):
         fields = list(form.base_fields.keys())
 
         # Remove dates if present
-        if "check_in_date" in fields:
-            fields.remove("check_in_date")
-        if "check_out_date" in fields:
-            fields.remove("check_out_date")
+        for f in ("check_in_date", "check_out_date"):
+            if f in fields:
+                fields.remove(f)
 
-        # Reorder: guests, building, room, dates, then others
-        new_order = []
-        
-        # Add guests first
+        # Insert dates right after guests
         if "guests" in fields:
-            new_order.append("guests")
-            fields.remove("guests")
+            idx = fields.index("guests") + 1
+        else:
+            idx = 0
 
-        # Add building
-        if "building" in fields:
-            new_order.append("building")
-            fields.remove("building")
+        fields.insert(idx, "check_in_date")
+        fields.insert(idx + 1, "check_out_date")
 
-        # Add room
+        # Ensure building comes before room
         if "room" in fields:
-            new_order.append("room")
-            fields.remove("room")
+            if "building" in fields:
+                fields.remove("building")
+            room_idx = fields.index("room")
+            fields.insert(room_idx, "building")
 
-        # Add dates back
-        new_order.extend(["check_in_date", "check_out_date"])
-
-        # Add remaining fields
-        new_order.extend(fields)
-
-        form.base_fields = {k: form.base_fields[k] for k in new_order if k in form.base_fields}
+        # Apply reordered fields back to form
+        form.base_fields = {k: form.base_fields[k] for k in fields}
 
         return form
 
+    # ---------- Row action buttons ----------
     def row_actions(self, obj):
-        checked_in = "✓ In" if obj.is_checked_in else ""
-        checked_out = "✓ Out" if obj.is_checked_out else ""
-        cancelled = "✗ Cancelled" if obj.is_cancelled else ""
-        paid = "✓ Paid" if obj.is_paid else ""
+        buttons = []
+
+        if not obj.is_checked_in and not obj.is_cancelled:
+            buttons.append(
+                f'<a class="btn-checkin" href="{obj.pk}/checkin/">Check in</a>'
+            )
+
+        if obj.is_checked_in and not obj.is_checked_out and not obj.is_cancelled:
+            buttons.append(
+                f'<a class="btn-checkout" href="{obj.pk}/checkout/">Check out</a>'
+            )
+
+        if not obj.is_paid and not obj.is_cancelled:
+            buttons.append(
+                f'<a class="btn-paid" href="{obj.pk}/paid/">Mark as Paid</a>'
+            )
+
+        if not obj.is_cancelled:
+            buttons.append(
+                f'<a class="btn-cancel" href="{obj.pk}/cancel/">Cancel</a>'
+            )
 
         return format_html(
-            "{} {} {} {}",
-            checked_in,
-            checked_out,
-            cancelled,
-            paid
+            '<div class="reservation-actions">{}</div>',
+            format_html("".join(buttons))
         )
-    row_actions.short_description = "Status"
+
+    row_actions.short_description = "Actions"
+
+    # ---------- URLs ----------
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path("<int:pk>/checkin/", self.admin_site.admin_view(self.checkin)),
+            path("<int:pk>/checkout/", self.admin_site.admin_view(self.checkout)),
+            path("<int:pk>/cancel/", self.admin_site.admin_view(self.cancel)),
+            path("<int:pk>/paid/", self.admin_site.admin_view(self.paid)),
+        ]
+        return custom + urls
+
+    # ---------- Actions ----------
+    def checkin(self, request, pk):
+        obj = Reservation.objects.get(pk=pk)
+        obj.is_checked_in = True
+        obj.save(update_fields=["is_checked_in"])
+        messages.success(request, "Reservation checked in.")
+        return redirect(request.META.get("HTTP_REFERER"))
+
+    def checkout(self, request, pk):
+        obj = Reservation.objects.get(pk=pk)
+        obj.is_checked_out = True
+        obj.save(update_fields=["is_checked_out"])
+        messages.success(request, "Reservation checked out.")
+        return redirect(request.META.get("HTTP_REFERER"))
+
+    def cancel(self, request, pk):
+        obj = Reservation.objects.get(pk=pk)
+        obj.is_cancelled = True
+        obj.save(update_fields=["is_cancelled"])
+        messages.success(request, "Reservation cancelled.")
+        return redirect(request.META.get("HTTP_REFERER"))
+
+    def paid(self, request, pk):
+        obj = Reservation.objects.get(pk=pk)
+        obj.is_paid = True
+        obj.save(update_fields=["is_paid"])
+        messages.success(request, "Marked as paid.")
+        return redirect(request.META.get("HTTP_REFERER"))

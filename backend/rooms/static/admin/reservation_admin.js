@@ -6,12 +6,21 @@
         var checkInDateInput = $('#id_check_in_date');
         var checkOutDateInput = $('#id_check_out_date');
         
-        // Function to update room options based on building selection
+        // Function to update room options based on building selection and dates
         function updateRoomOptions(buildingId) {
             if (buildingId) {
                 var data = {
                     'building': buildingId
                 };
+                
+                // Add check-in and check-out dates if available
+                var checkInDate = checkInDateInput.val();
+                var checkOutDate = checkOutDateInput.val();
+                
+                if (checkInDate && checkOutDate) {
+                    data.check_in_date = checkInDate;
+                    data.check_out_date = checkOutDate;
+                }
                 
                 // Check if we're editing an existing reservation
                 var path = window.location.pathname;
@@ -39,6 +48,7 @@
                             // If room is occupied, disable the option (but still show it)
                             if (item.occupied && String(item.id) !== String(currentValue)) {
                                 option.disabled = true;
+                                // Add a class for styling if needed
                                 $(option).addClass('occupied-room');
                             }
                         });
@@ -50,6 +60,7 @@
                         
                         roomSelect.trigger('change');
                         
+                        // Log for debugging
                         console.log('Updated room options:', data.results.length, 'rooms loaded');
                     },
                     error: function(xhr, status, error) {
@@ -107,6 +118,7 @@
         }
         
         // Also trigger update when page loads if dates are already filled
+        // This handles the case when page is reloaded or validation fails
         setTimeout(function() {
             var initialBuildingId = buildingSelect.val();
             var checkInDate = checkInDateInput.val();
@@ -115,6 +127,6 @@
             if (initialBuildingId && checkInDate && checkOutDate) {
                 updateRoomOptions(initialBuildingId);
             }
-        }, 500);
+        }, 500); // Increased delay to ensure page is fully loaded
     });
 })(django.jQuery);
