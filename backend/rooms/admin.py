@@ -270,21 +270,23 @@ class ReservationAdmin(admin.ModelAdmin):
             if f in fields:
                 fields.remove(f)
 
-        # Insert dates right after guests
-        if "guests" in fields:
-            idx = fields.index("guests") + 1
-        else:
-            idx = 0
-
-        fields.insert(idx, "check_in_date")
-        fields.insert(idx + 1, "check_out_date")
-
         # Ensure building comes before room
         if "room" in fields:
             if "building" in fields:
                 fields.remove("building")
             room_idx = fields.index("room")
             fields.insert(room_idx, "building")
+
+        # Insert dates right after room (choose guests → building → room → then pick dates from calendar)
+        if "room" in fields:
+            idx = fields.index("room") + 1
+        elif "guests" in fields:
+            idx = fields.index("guests") + 1
+        else:
+            idx = 0
+
+        fields.insert(idx, "check_in_date")
+        fields.insert(idx + 1, "check_out_date")
 
         # Apply reordered fields back to form
         form.base_fields = {k: form.base_fields[k] for k in fields}
