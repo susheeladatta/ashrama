@@ -8,7 +8,6 @@ from django.db.models import Max, Count, Case, When, Value, BooleanField, Exists
 from django.urls import path
 from django.shortcuts import redirect
 from django.utils.html import format_html
-from django.http import JsonResponse
 
 from .models import Building, Floor, Room, Guest, Reservation
 from .forms import RoomAdminForm, ReservationAdminForm
@@ -257,41 +256,40 @@ class ReservationAdmin(admin.ModelAdmin):
     )
 
     # -------------------------------------------------
-    # FORCE FIELD ORDER
-    # guests -> building -> room -> check_in_date -> check_out_date
+    # FORCE FIELD ORDER (form was overriding before)
     # -------------------------------------------------
+
+    
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
 
         fields = list(form.base_fields.keys())
-        ordered_start = ["guests", "building", "room", "check_in_date", "check_out_date"]
-        new_fields = [f for f in ordered_start if f in form.base_fields] + [f for f in fields if f not in ordered_start]
 
-        form.base_fields = {k: form.base_fields[k] for k in new_fields}
+        # Remove dates if present
+        for f in ("check_in_date", "check_out_date"):
+            if f in fields:
+                fields.remove(f)
+
+        # Insert dates right after guests
+        if "guests" in fields:
+            idx = fields.index("guests") + 1
+        else:
+            idx = 0
+
+        fields.insert(idx, "check_in_date")
+        fields.insert(idx + 1, "check_out_date")
+
+        # Ensure building comes before room
+        if "room" in fields:
+            if "building" in fields:
+                fields.remove("building")
+            room_idx = fields.index("room")
+            fields.insert(room_idx, "building")
+
+        # Apply reordered fields back to form
+        form.base_fields = {k: form.base_fields[k] for k in fields}
+
         return form
-
-    # ---------- Booked dates endpoint for room calendar ----------
-    def get_urls(self):
-        urls = super().get_urls()
-        custom = [
-            path("booked-dates/<int:room_id>/", self.admin_site.admin_view(self.booked_dates), name="reservation_booked_dates"),
-            path("<int:pk>/checkin/", self.admin_site.admin_view(self.checkin)),
-            path("<int:pk>/checkout/", self.admin_site.admin_view(self.checkout)),
-            path("<int:pk>/cancel/", self.admin_site.admin_view(self.cancel)),
-            path("<int:pk>/paid/", self.admin_site.admin_view(self.paid)),
-        ]
-        return custom + urls
-
-    def booked_dates(self, request, room_id):
-        reservations = Reservation.objects.filter(room_id=room_id).exclude(is_cancelled=True)
-        data = []
-        for r in reservations:
-            if r.check_in_date and r.check_out_date:
-                data.append({
-                    "from": r.check_in_date.isoformat(),
-                    "to": r.check_out_date.isoformat(),
-                })
-        return JsonResponse(data, safe=False)
 
     # ---------- Row action buttons ----------
     def row_actions(self, obj):
@@ -323,6 +321,17 @@ class ReservationAdmin(admin.ModelAdmin):
         )
 
     row_actions.short_description = "Actions"
+
+    # ---------- URLs ----------
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path("<int:pk>/checkin/", self.admin_site.admin_view(self.checkin)),
+            path("<int:pk>/checkout/", self.admin_site.admin_view(self.checkout)),
+            path("<int:pk>/cancel/", self.admin_site.admin_view(self.cancel)),
+            path("<int:pk>/paid/", self.admin_site.admin_view(self.paid)),
+        ]
+        return custom + urls
 
     # ---------- Actions ----------
     def checkin(self, request, pk):
