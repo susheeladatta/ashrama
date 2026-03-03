@@ -260,36 +260,43 @@ class ReservationAdmin(admin.ModelAdmin):
     # -------------------------------------------------
 
     
-    def get_form(self, request, obj=None, **kwargs):
-        form = super().get_form(request, obj, **kwargs)
+# In ReservationAdmin class, replace the get_form method
 
-        fields = list(form.base_fields.keys())
+def get_form(self, request, obj=None, **kwargs):
+    form = super().get_form(request, obj, **kwargs)
 
-        # Remove dates if present
-        for f in ("check_in_date", "check_out_date"):
-            if f in fields:
-                fields.remove(f)
+    fields = list(form.base_fields.keys())
 
-        # Insert dates right after guests
+    # Remove dates temporarily
+    for f in ("check_in_date", "check_out_date"):
+        if f in fields:
+            fields.remove(f)
+
+    # Ensure building comes right before room
+    if "room" in fields:
+        if "building" in fields:
+            fields.remove("building")
+        room_idx = fields.index("room")
+        fields.insert(room_idx, "building")
+
+    # Now insert the two date fields immediately after room
+    if "room" in fields:
+        room_idx = fields.index("room")
+        fields.insert(room_idx + 1, "check_in_date")
+        fields.insert(room_idx + 2, "check_out_date")
+    else:
+        # fallback if room missing (should not happen)
         if "guests" in fields:
             idx = fields.index("guests") + 1
         else:
             idx = 0
-
         fields.insert(idx, "check_in_date")
         fields.insert(idx + 1, "check_out_date")
 
-        # Ensure building comes before room
-        if "room" in fields:
-            if "building" in fields:
-                fields.remove("building")
-            room_idx = fields.index("room")
-            fields.insert(room_idx, "building")
+    # Rebuild form.base_fields with the new order
+    form.base_fields = {k: form.base_fields[k] for k in fields}
 
-        # Apply reordered fields back to form
-        form.base_fields = {k: form.base_fields[k] for k in fields}
-
-        return form
+    return form
 
     # ---------- Row action buttons ----------
     def row_actions(self, obj):

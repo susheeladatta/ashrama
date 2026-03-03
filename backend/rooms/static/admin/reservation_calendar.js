@@ -1,3 +1,4 @@
+// static/admin/reservation_calendar.js
 document.addEventListener("DOMContentLoaded", function () {
     const roomSelect = document.querySelector("#id_room");
     const checkIn = document.querySelector("#id_check_in_date");
@@ -34,10 +35,10 @@ document.addEventListener("DOMContentLoaded", function () {
                         if (selectedDates.length === 2) {
                             checkIn.value = flatpickr.formatDate(selectedDates[0], "Y-m-d");
                             checkOut.value = flatpickr.formatDate(selectedDates[1], "Y-m-d");
-                            
-                            // Trigger change events so room dropdown updates
-                            $(checkIn).trigger('change');
-                            $(checkOut).trigger('change');
+
+                            // Trigger change events so the room dropdown updates
+                            checkIn.dispatchEvent(new Event('change', { bubbles: true }));
+                            checkOut.dispatchEvent(new Event('change', { bubbles: true }));
                         }
                     }
                 });
