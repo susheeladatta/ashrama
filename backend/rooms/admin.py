@@ -1,4 +1,3 @@
-# admin.py - CLEAN FIXED VERSION
 import nested_admin
 from django import forms
 from django.contrib import admin, messages
@@ -194,17 +193,45 @@ class GuestAdmin(admin.ModelAdmin):
 @admin.register(Reservation)
 class ReservationAdmin(admin.ModelAdmin):
     class Media:
-        js = (
-            "admin/reservation_admin.js",
+        js = ("admin/reservation_admin.js",
             "https://cdn.jsdelivr.net/npm/flatpickr",
-            "admin/reservation_calendar.js",
-        )
+            "admin/reservation_calendar.js")
         css = {
-            "all": (
-                "admin/css/reservation_actions.css",
-                "https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css",
-            )
+            "all": ("admin/css/reservation_actions.css",
+                    "https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css")
         }
+
+        # class Media:
+        # css = {
+        #     "all": (
+        #         "https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css",
+        #     )
+        # }
+        # js = (
+        #     "https://cdn.jsdelivr.net/npm/flatpickr",
+        #     "admin/reservation_calendar.js",
+        # )
+
+    def reservation_title(self, obj):
+        guests = ", ".join(g.full_name for g in obj.guests.all())
+        room = obj.room
+
+        if room:
+            building = room.building.name
+            room_no = room.number
+            floor_no = room.floor.number if room.floor else "-"
+            location = f"{building} (Room {room_no}, Floor {floor_no})"
+        else:
+            location = "No room assigned"
+
+        return format_html(
+            "<strong>{}</strong><br><span style='color:#aaa'>{}</span>",
+            guests,
+            location
+        )
+
+    reservation_title.short_description = "Reservation"
+
 
     form = ReservationAdminForm
     filter_horizontal = ("guests",)
@@ -227,40 +254,40 @@ class ReservationAdmin(admin.ModelAdmin):
         "is_paid",
     )
 
-    # ---------- Custom field order ----------
+    # -------------------------------------------------
+    # FORCE FIELD ORDER (form was overriding before)
+    # -------------------------------------------------
+
+    
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
 
         fields = list(form.base_fields.keys())
 
-        # Remove dates temporarily
+        # Remove dates if present
         for f in ("check_in_date", "check_out_date"):
             if f in fields:
                 fields.remove(f)
 
-        # Ensure building comes right before room
+        # Insert dates right after guests
+        if "guests" in fields:
+            idx = fields.index("guests") + 1
+        else:
+            idx = 0
+
+        fields.insert(idx, "check_in_date")
+        fields.insert(idx + 1, "check_out_date")
+
+        # Ensure building comes before room
         if "room" in fields:
             if "building" in fields:
                 fields.remove("building")
             room_idx = fields.index("room")
             fields.insert(room_idx, "building")
 
-        # Insert dates immediately after room
-        if "room" in fields:
-            room_idx = fields.index("room")
-            fields.insert(room_idx + 1, "check_in_date")
-            fields.insert(room_idx + 2, "check_out_date")
-        else:
-            # Fallback if room missing (should not happen)
-            if "guests" in fields:
-                idx = fields.index("guests") + 1
-            else:
-                idx = 0
-            fields.insert(idx, "check_in_date")
-            fields.insert(idx + 1, "check_out_date")
-
-        # Rebuild form.base_fields with the new order
+        # Apply reordered fields back to form
         form.base_fields = {k: form.base_fields[k] for k in fields}
+
         return form
 
     # ---------- Row action buttons ----------
@@ -291,9 +318,10 @@ class ReservationAdmin(admin.ModelAdmin):
             '<div class="reservation-actions">{}</div>',
             format_html("".join(buttons))
         )
+
     row_actions.short_description = "Actions"
 
-    # ---------- Custom admin URLs ----------
+    # ---------- URLs ----------
     def get_urls(self):
         urls = super().get_urls()
         custom = [
@@ -304,7 +332,7 @@ class ReservationAdmin(admin.ModelAdmin):
         ]
         return custom + urls
 
-    # ---------- Action methods ----------
+    # ---------- Actions ----------
     def checkin(self, request, pk):
         obj = Reservation.objects.get(pk=pk)
         obj.is_checked_in = True
@@ -332,23 +360,3 @@ class ReservationAdmin(admin.ModelAdmin):
         obj.save(update_fields=["is_paid"])
         messages.success(request, "Marked as paid.")
         return redirect(request.META.get("HTTP_REFERER"))
-
-    # ---------- Reservation title helper ----------
-    def reservation_title(self, obj):
-        guests = ", ".join(g.full_name for g in obj.guests.all())
-        room = obj.room
-
-        if room:
-            building = room.building.name
-            room_no = room.number
-            floor_no = room.floor.number if room.floor else "-"
-            location = f"{building} (Room {room_no}, Floor {floor_no})"
-        else:
-            location = "No room assigned"
-
-        return format_html(
-            "<strong>{}</strong><br><span style='color:#aaa'>{}</span>",
-            guests,
-            location
-        )
-    reservation_title.short_description = "Reservation"
