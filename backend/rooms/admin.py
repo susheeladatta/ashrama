@@ -194,45 +194,17 @@ class GuestAdmin(admin.ModelAdmin):
 @admin.register(Reservation)
 class ReservationAdmin(admin.ModelAdmin):
     class Media:
-        js = ("admin/reservation_admin.js",
+        js = (
+            "admin/reservation_admin.js",
             "https://cdn.jsdelivr.net/npm/flatpickr",
-            "admin/reservation_calendar.js")
-        css = {
-            "all": ("admin/css/reservation_actions.css",
-                    "https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css")
-        }
-
-        # class Media:
-        # css = {
-        #     "all": (
-        #         "https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css",
-        #     )
-        # }
-        # js = (
-        #     "https://cdn.jsdelivr.net/npm/flatpickr",
-        #     "admin/reservation_calendar.js",
-        # )
-
-    def reservation_title(self, obj):
-        guests = ", ".join(g.full_name for g in obj.guests.all())
-        room = obj.room
-
-        if room:
-            building = room.building.name
-            room_no = room.number
-            floor_no = room.floor.number if room.floor else "-"
-            location = f"{building} (Room {room_no}, Floor {floor_no})"
-        else:
-            location = "No room assigned"
-
-        return format_html(
-            "<strong>{}</strong><br><span style='color:#aaa'>{}</span>",
-            guests,
-            location
+            "admin/reservation_calendar.js",
         )
-
-    reservation_title.short_description = "Reservation"
-
+        css = {
+            "all": (
+                "admin/css/reservation_actions.css",
+                "https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css",
+            )
+        }
 
     form = ReservationAdminForm
     filter_horizontal = ("guests",)
@@ -255,48 +227,41 @@ class ReservationAdmin(admin.ModelAdmin):
         "is_paid",
     )
 
-    # -------------------------------------------------
-    # FORCE FIELD ORDER (form was overriding before)
-    # -------------------------------------------------
+    # ---------- Custom field order ----------
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
 
-    
-# In ReservationAdmin class, replace the get_form method
+        fields = list(form.base_fields.keys())
 
-def get_form(self, request, obj=None, **kwargs):
-    form = super().get_form(request, obj, **kwargs)
+        # Remove dates temporarily
+        for f in ("check_in_date", "check_out_date"):
+            if f in fields:
+                fields.remove(f)
 
-    fields = list(form.base_fields.keys())
+        # Ensure building comes right before room
+        if "room" in fields:
+            if "building" in fields:
+                fields.remove("building")
+            room_idx = fields.index("room")
+            fields.insert(room_idx, "building")
 
-    # Remove dates temporarily
-    for f in ("check_in_date", "check_out_date"):
-        if f in fields:
-            fields.remove(f)
-
-    # Ensure building comes right before room
-    if "room" in fields:
-        if "building" in fields:
-            fields.remove("building")
-        room_idx = fields.index("room")
-        fields.insert(room_idx, "building")
-
-    # Now insert the two date fields immediately after room
-    if "room" in fields:
-        room_idx = fields.index("room")
-        fields.insert(room_idx + 1, "check_in_date")
-        fields.insert(room_idx + 2, "check_out_date")
-    else:
-        # fallback if room missing (should not happen)
-        if "guests" in fields:
-            idx = fields.index("guests") + 1
+        # Insert dates immediately after room
+        if "room" in fields:
+            room_idx = fields.index("room")
+            fields.insert(room_idx + 1, "check_in_date")
+            fields.insert(room_idx + 2, "check_out_date")
         else:
-            idx = 0
-        fields.insert(idx, "check_in_date")
-        fields.insert(idx + 1, "check_out_date")
+            # Fallback if room missing (should not happen)
+            if "guests" in fields:
+                idx = fields.index("guests") + 1
+            else:
+                idx = 0
+            fields.insert(idx, "check_in_date")
+            fields.insert(idx + 1, "check_out_date")
 
-    # Rebuild form.base_fields with the new order
-    form.base_fields = {k: form.base_fields[k] for k in fields}
-
-    return form
+        # Rebuild form.base_fields with the new order
+        form.base_fields = {k: form.base_fields[k] for k in fields}
+        return form
 
     # ---------- Row action buttons ----------
     def row_actions(self, obj):
@@ -326,10 +291,9 @@ def get_form(self, request, obj=None, **kwargs):
             '<div class="reservation-actions">{}</div>',
             format_html("".join(buttons))
         )
-
     row_actions.short_description = "Actions"
 
-    # ---------- URLs ----------
+    # ---------- Custom admin URLs ----------
     def get_urls(self):
         urls = super().get_urls()
         custom = [
@@ -340,7 +304,7 @@ def get_form(self, request, obj=None, **kwargs):
         ]
         return custom + urls
 
-    # ---------- Actions ----------
+    # ---------- Action methods ----------
     def checkin(self, request, pk):
         obj = Reservation.objects.get(pk=pk)
         obj.is_checked_in = True
@@ -368,3 +332,23 @@ def get_form(self, request, obj=None, **kwargs):
         obj.save(update_fields=["is_paid"])
         messages.success(request, "Marked as paid.")
         return redirect(request.META.get("HTTP_REFERER"))
+
+    # ---------- Reservation title helper ----------
+    def reservation_title(self, obj):
+        guests = ", ".join(g.full_name for g in obj.guests.all())
+        room = obj.room
+
+        if room:
+            building = room.building.name
+            room_no = room.number
+            floor_no = room.floor.number if room.floor else "-"
+            location = f"{building} (Room {room_no}, Floor {floor_no})"
+        else:
+            location = "No room assigned"
+
+        return format_html(
+            "<strong>{}</strong><br><span style='color:#aaa'>{}</span>",
+            guests,
+            location
+        )
+    reservation_title.short_description = "Reservation"
